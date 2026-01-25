@@ -2,16 +2,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pint import UnitRegistry
+import scipy.integrate as spi
 
-##################################################
-# HW1 Problem 2
-##################################################
+###################################################
+## HW1 Problem 2
+####################################################
 
-#Part A
+##Part A#
 
-alt = np.arange(-5000, -1000, 50)
+#alt = np.arange(-5000, -1000, 50)#
 
-temp_values = np.array([
+#temp_values = np.array([#
     320.650, 320.325, 320.000,
     319.675, 319.350, 319.025,
     318.700, 318.375, 318.050, 317.725,
@@ -37,38 +38,38 @@ temp_values = np.array([
     296.600, 296.275, 295.950, 295.625,
     295.300, 294.975
 ])
+#
 
+#def standardAtmosphereTemperature(altitude):
+#    altitude = np.asarray(altitude)
+#    if altitude < -5000 or altitude > 80000:
+#        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
+#    
+#    temperature = np.interp(altitude, alt, temp_values)#
 
-def standardAtmosphereTemperature(altitude):
-    altitude = np.asarray(altitude)
-    if altitude < -5000 or altitude > 80000:
-        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
-    
-    temperature = np.interp(altitude, alt, temp_values)
+#    return  temperature
+#desired_altitude = -3215
+#computed_temperature = standardAtmosphereTemperature(desired_altitude)
+#print("The temperature at", desired_altitude, "m is", computed_temperature, "K")#
+#
 
-    return  temperature
-desired_altitude = -3215
-computed_temperature = standardAtmosphereTemperature(desired_altitude)
-print("The temperature at", desired_altitude, "m is", computed_temperature, "K")
+###Part B
+#x = alt 
+#y = temp_values
+#plt.plot(alt, temp_values)
+#plt.title('Temperature vs Altitude')
+#plt.xlabel('Altitude (m)')
+#plt.ylabel('Temperature (K)')
+#plt.grid()
+#plt.savefig("temperature_vs_altitude.png")#
+#
 
-
-##Part B
-x = alt 
-y = temp_values
-plt.plot(alt, temp_values)
-plt.title('Temperature vs Altitude')
-plt.xlabel('Altitude (m)')
-plt.ylabel('Temperature (K)')
-plt.grid()
-plt.savefig("temperature_vs_altitude.png")
-
-
-#Part C
-def standardAtmosphere(measurement, altitude):
-    if altitude < -5000 or altitude > -1000:
-        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
-    standardAtmosphereDictionary = {}
-    standardAtmosphereDictionary['temperature']            = np.array([
+##Part C
+#def standardAtmosphere(measurement, altitude):
+#    if altitude < -5000 or altitude > -1000:
+#        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
+#    standardAtmosphereDictionary = {}
+#    standardAtmosphereDictionary['temperature']            = np.array([
                                                             320.650, 320.325, 320.000,
                                                             319.675, 319.350, 319.025,
                                                             318.700, 318.375, 318.050, 317.725,
@@ -94,7 +95,7 @@ def standardAtmosphere(measurement, altitude):
                                                             296.600, 296.275, 295.950, 295.625,
                                                             295.300, 294.975
                                                             ])
-    standardAtmosphereDictionary['pressure']               = np.array([
+#    standardAtmosphereDictionary['pressure']               = np.array([
     1.7768e+3, 1.7674e+3, 1.7580e+3, 1.7486e+3, 1.7393e+3,
     1.7300e+3, 1.7208e+3, 1.7116e+3, 1.7024e+3, 1.6933e+3,
     1.6842e+3, 1.6751e+3, 1.6661e+3, 1.6571e+3, 1.6482e+3,
@@ -118,7 +119,7 @@ def standardAtmosphere(measurement, altitude):
     1.2069e+3, 1.2000e+3, 1.1931e+3, 1.1863e+3, 1.1795e+3,
     1.1727e+3, 1.1659e+3, 1.1592e+3, 1.1525e+3, 1.1459e+3
 ])
-    standardAtmosphereDictionary['density']                = np.array([
+#    standardAtmosphereDictionary['density']                = np.array([
     1.9305, 1.9222, 1.9139, 1.9056, 1.8974,
     1.8892, 1.8810, 1.8728, 1.8647, 1.8566,
     1.8485, 1.8405, 1.8325, 1.8245, 1.8166,
@@ -142,7 +143,7 @@ def standardAtmosphere(measurement, altitude):
     1.4103, 1.4037, 1.3971, 1.3904, 1.3839,
     1.3773, 1.3707, 1.3642, 1.3597, 1.3533
 ])
-    standardAtmosphereDictionary['dynamic_viscosity']      = np.array([
+#    standardAtmosphereDictionary['dynamic_viscosity']      = np.array([
                                                                         1.942e-5, 1.940e-5, 1.939e-5, 1.937e-5, 1.936e-5, 1.934e-5,
                                                                         1.933e-5, 1.931e-5, 1.930e-5, 1.928e-5,
                                                                         1.927e-5, 1.925e-5, 1.924e-5, 1.922e-5, 1.921e-5, 1.919e-5,
@@ -160,7 +161,7 @@ def standardAtmosphere(measurement, altitude):
                                                                         1.837e-5, 1.835e-5, 1.834e-5, 1.832e-5, 1.831e-5, 1.829e-5,
                                                                         1.828e-5, 1.826e-5, 1.825e-5, 1.823e-5
                                                                     ])
-    standardAtmosphereDictionary['kinematic_viscosity']    = np.array([
+#    standardAtmosphereDictionary['kinematic_viscosity']    = np.array([
                                                                         1.006e-5, 1.009e-5, 1.012e-5, 1.015e-5, 1.018e-5, 1.021e-5,
                                                                         1.024e-5, 1.027e-5, 1.030e-5, 1.033e-5,
                                                                         1.036e-5, 1.039e-5, 1.042e-5, 1.045e-5, 1.048e-5, 1.051e-5,
@@ -178,7 +179,7 @@ def standardAtmosphere(measurement, altitude):
                                                                         1.216e-5, 1.219e-5, 1.222e-5, 1.225e-5, 1.228e-5, 1.231e-5,
                                                                         1.234e-5, 1.237e-5, 1.240e-5, 1.243e-5
                                                                     ])
-    standardAtmosphereDictionary['speed_of_sound']         = np.array([
+#    standardAtmosphereDictionary['speed_of_sound']         = np.array([
                                                                         358.97, 358.79, 358.61, 358.43, 358.24, 358.06, 357.88, 357.70,
                                                                         357.51, 357.33, 357.15, 356.97, 356.78, 356.60, 356.42, 356.23,
                                                                         356.05, 355.87, 355.68, 355.50,
@@ -195,137 +196,203 @@ def standardAtmosphere(measurement, altitude):
                                                                         346.07, 345.89, 345.70, 345.52, 345.33, 345.15, 344.96, 344.78,
                                                                         344.59, 344.41
                                                                  ])
-    assert(measurement in standardAtmosphereDictionary.keys())
-    #raise NotImplementedError('Your code should continue here!')
-    measurement_at_altitude = np.interp(altitude, alt, standardAtmosphereDictionary[measurement])   
+#    assert(measurement in standardAtmosphereDictionary.keys())
+#    #raise NotImplementedError('Your code should continue here!')
+#    measurement_at_altitude = np.interp(altitude, alt, standardAtmosphereDictionary[measurement])   #
 
-    return measurement_at_altitude
-desired_altitude = -3215
-computed_temperature = standardAtmosphere('temperature' , desired_altitude)
-computed_pressure = standardAtmosphere('pressure' , desired_altitude)
-computed_density = standardAtmosphere('density' , desired_altitude)
-computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude)
-computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude)
-computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)
-
-#desired_altitude = 0.0
+#    return measurement_at_altitude
+#desired_altitude = -3215
 #computed_temperature = standardAtmosphere('temperature' , desired_altitude)
 #computed_pressure = standardAtmosphere('pressure' , desired_altitude)
+#computed_density = standardAtmosphere('density' , desired_altitude)
+#computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude)
+#computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude)
+#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)#
 #
+#
+
 ##Part D
 #def standardAtmosphere(measurement, altitude):
 #    if altitude < -5000 or altitude > 80000:
 #        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
 #    standardAtmosphereDataframe = pd.read_csv('standard_atmosphere.csv')
 #    # Check existence of measurement (requires new method)
-#    raise NotImplementedError('Your code should continue here!')
-#    return measurement_at_altitude
-#
+#    if measurement not in standardAtmosphereDataframe.columns:
+#        raise ValueError('Measurement is not in the standard atmosphere data.')
+#    #raise NotImplementedError('Your code should continue here!')
+#    temperature         = standardAtmosphereDataframe['temperature']
+#    pressure            = standardAtmosphereDataframe['pressure']
+#    density             = standardAtmosphereDataframe['density']
+#    dynamic_viscosity   = standardAtmosphereDataframe['dynamic_viscosity']
+#    kinematic_viscosity = standardAtmosphereDataframe['kinematic_viscosity']
+#    speed_of_sound      = standardAtmosphereDataframe['speed_of_sound']#
+
+#    measurement_at_altitude = np.interp(altitude, standardAtmosphereDataframe['altitude'], standardAtmosphereDataframe[measurement])#
+
+#    return measurement_at_altitude#
+
 ## compute the properties
-#computed_temperature = standardAtmosphere('temperature' , desired_altitude)
-#computed_pressure = standardAtmosphere('pressure' , desired_altitude)
-#computed_density = standardAtmosphere('density' , desired_altitude)
-#computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude)
-#computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude)
-#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)
-#
+#computed_temperature         = standardAtmosphere('temperature' ,         desired_altitude)
+#computed_pressure            = standardAtmosphere('pressure' ,            desired_altitude)
+#computed_density             = standardAtmosphere('density' ,             desired_altitude)
+#computed_speed_of_sound      = standardAtmosphere('speed_of_sound' ,      desired_altitude)
+#computed_dynamic_viscosity   = standardAtmosphere('dynamic_viscosity' ,   desired_altitude)
+#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)#
+
 ## Print the values
 #print(computed_temperature)
 #print(computed_pressure)
 #print(computed_density)
 #print(computed_speed_of_sound)
 #print(computed_dynamic_viscosity)
-#print(computed_kinematic_viscosity)
-#
+#print(computed_kinematic_viscosity)#
+
 ##Part E
 #def standardAtmosphere(measurement, altitude):
+#    if np.any(altitude < -5000) or np.any(altitude > 80000):
+#        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
 #    standardAtmosphereDictionary = pd.read_csv('standard_atmosphere.csv')
-#    raise NotImplementedError('Your code should continue here!')
-#    return measurement_at_altitude
-#
+#    #raise NotImplementedError('Your code should continue here!')
+#    temperature         = standardAtmosphereDictionary['temperature']
+#    pressure            = standardAtmosphereDictionary['pressure']
+#    density             = standardAtmosphereDictionary['density']
+#    dynamic_viscosity   = standardAtmosphereDictionary['dynamic_viscosity']
+#    kinematic_viscosity = standardAtmosphereDictionary['kinematic_viscosity']
+#    speed_of_sound      = standardAtmosphereDictionary['speed_of_sound']#
+
+#    measurement_at_altitude = np.interp(altitude, standardAtmosphereDictionary['altitude'], standardAtmosphereDictionary[measurement])
+#    return measurement_at_altitude#
+
 ## Set the desired altitude array
 #desired_altitude = np.array([ 1 , 1001 , 2001 , 3001 ])
-#alength = len(desired_altitude)
-#
+#alength = len(desired_altitude)#
+
 ## compute the properties
 #computed_temperature = standardAtmosphere('temperature' , desired_altitude)
 #computed_pressure = standardAtmosphere('pressure' , desired_altitude)
 #computed_density = standardAtmosphere('density' , desired_altitude)
 #computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude)
 #computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude)
-#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)
-#
+#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)#
+
 ## Print the values
 #print(computed_temperature)
 #print(computed_pressure)
 #print(computed_density)
 #print(computed_speed_of_sound)
 #print(computed_dynamic_viscosity)
-#print(computed_kinematic_viscosity)
-#
+#print(computed_kinematic_viscosity)#
+
 ## Check the lengths of the returned arrays
 #assert( len( computed_temperature )         == alength )
 #assert( len( computed_pressure )            == alength )
 #assert( len( computed_density )             == alength )
 #assert( len( computed_speed_of_sound )      == alength )
 #assert( len( computed_dynamic_viscosity )   == alength )
-#assert( len( computed_kinematic_viscosity ) == alength )
+#assert( len( computed_kinematic_viscosity ) == alength )#
 #
-#
+
 ##Part F
-#units = UnitRegistry()
-#
+#units = UnitRegistry()#
+
 #def standardAtmosphere(measurement, altitude):
+#    if np.any(altitude < -5000) or np.any(altitude > 80000):
+#        raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
 #    standardAtmosphereDictionary = pd.read_csv('standard_atmosphere.csv')
-#    raise NotImplementedError('Your code should go here!')
-#   
-#    return measurement_at_altitude
-#
+#    #raise NotImplementedError('Your code should continue here!')
+#    temperature         = standardAtmosphereDictionary['temperature']
+#    pressure            = standardAtmosphereDictionary['pressure']
+#    density             = standardAtmosphereDictionary['density']
+#    dynamic_viscosity   = standardAtmosphereDictionary['dynamic_viscosity']
+#    kinematic_viscosity = standardAtmosphereDictionary['kinematic_viscosity']
+#    speed_of_sound      = standardAtmosphereDictionary['speed_of_sound']#
+
+#    measurement_at_altitude = np.interp(altitude, standardAtmosphereDictionary['altitude'], standardAtmosphereDictionary[measurement])
+#    return measurement_at_altitude    
+#    
 ## Set the desired altitude array
-#desired_altitude = np.array([ 1 , 1001 , 2001 , 3001 ]) * units.m
-#
+#desired_altitude = np.array([ 1 , 1001 , 2001 , 3001 ]) * units.m#
+
 ## compute the properties
 #computed_temperature = standardAtmosphere('temperature' , desired_altitude) * units.k
 #computed_pressure = standardAtmosphere('pressure' , desired_altitude) * units.pa
 #computed_density = standardAtmosphere('density' , desired_altitude) * units.kg / units.m**3
 #computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude) * units.m / units.s
 #computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude) * units.pa * units.s
-#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude) * units.m**2 / units.s
-#
+#computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude) * units.m**2 / units.s#
+
 ## Print the values
 #print(computed_temperature) 
 #print(computed_pressure)
 #print(computed_density)
 #print(computed_speed_of_sound)
 #print(computed_dynamic_viscosity)
-#print(computed_kinematic_viscosity)
-#
+#print(computed_kinematic_viscosity)#
+
 ## Check the units on the values
 #assert(computed_temperature.check('[temperature]'))
 #assert(computed_pressure.check('[pressure]'))
 #assert(computed_density.check('[mass]/[length]^3'))
 #assert(computed_speed_of_sound.check('[length]/[time]'))
 #assert(computed_dynamic_viscosity.check('[force]*[time]/[length]^2'))
-#assert(computed_kinematic_viscosity.check('[length]^2/[time]'))
-#
+#assert(computed_kinematic_viscosity.check('[length]^2/[time]'))#
+
 ## Check the lengths of the returned arrays
 #assert( len( computed_temperature ) == 4 )
 #assert( len( computed_pressure ) == 4 )
 #assert( len( computed_density ) == 4 )
 #assert( len( computed_speed_of_sound ) == 4 )
 #assert( len( computed_dynamic_viscosity ) == 4 )
-#assert( len( computed_kinematic_viscosity ) == 4 )
-#
-#
+#assert( len( computed_kinematic_viscosity ) == 4 )#
+
+#%%
 #################################################
 ## Problem 2
 #################################################
-#
-#
-#
-#
-#
-#
+import matplotlib.pyplot as plt
+import numpy as np
+from pint import UnitRegistry
+from scipy.integrate import solve_ivp
+
+
+m = 1
+L = 1 
+b = 0.5
+theta1 = 45
+omega1 = 0  
+
+def omega_dot(theta, t):
+    return np.sqrt((b / m) * (1 / L) * np.sin(np.radians(theta)))
+
+tend = 10
+t_span = (0, tend)    
+tstep = 0.01
+omega = solve_ivp(omega_dot, t_span, [omega1], t_eval=np.arange(0, tend, tstep))
+
+
+time = np.arange(0, tend, tstep)
+plt.plot(time, omega.y[0])
+plt.title('Angular Velocity vs Time')
+plt.xlabel('Time (s)')
+plt.ylabel('Angular Velocity (rad/s)')
+plt.grid()
+plt.savefig("angular_velocity_vs_time.png")
+print("heres omega bro  ")
+
+print(omega)
+
+def theta_dot(t, y):
+    theta, omega = y
+    dtheta_dt = omega
+    domega_dt = - (b / m) * (1 / L) * np.sin(np.radians(theta))
+    return [dtheta_dt, domega_dt]
+solution = solve_ivp(theta_dot, t_span, [theta1, omega1], t_eval=time)
+
+print("heres theta bro ")
+print(solution.y[0][-1])
+
+# %%
+
 #################################################
 ## Problem 3
 #################################################
@@ -338,3 +405,4 @@ computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desire
 #################################################
 ## Problem 4
 #################################################
+
