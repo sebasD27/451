@@ -396,13 +396,31 @@ print(solution.y[0][-1])
 #################################################
 ## Problem 3
 #################################################
-#
-#
-#
-#
-#
-#
+import numpy as np
+import scipy as sp
+
+A = np.array([[-3, 1], [1, 1]])
+B = np.array([2,5])
+
+x = np.linalg.solve(A, B)
+print("The solution to the system of equations is:")
+print(x)
+
+y = 5 -x 
+fx = -4*x + 3  
+
+def residual(vals):
+    x = vals[0]
+    
+    res = sp.optimize.root(fx, x, method="hybr")  # residual of the system of equations
+    return res
+print("The residual of the system of equations is:")
+print(residual(fx))
+
+
 #################################################
 ## Problem 4
 #################################################
 
+
+# %%
