@@ -116,7 +116,6 @@ desired_altitude = 0
 computed_temperature = standardAtmosphereTemperature(desired_altitude)
 print("The temperature at", desired_altitude, "m is", computed_temperature, "K")
 
-
 ##Part B
 
 plt.plot(alt, temp_values)
@@ -128,7 +127,7 @@ plt.savefig("temperature_vs_altitude.png")#
 # %%
 #Part C
 def standardAtmosphere(measurement, altitude):
-    if altitude < -5000 or altitude > -1000:
+    if altitude < -5000 or altitude > 80000:
         raise ValueError('Altitude is out of range. Must be between -5000 m and 80000 m.')
     standardAtmosphereDictionary = {}
     standardAtmosphereDictionary['temperature']            = np.array([
@@ -667,14 +666,20 @@ def standardAtmosphere(measurement, altitude):
     #raise NotImplementedError('Your code should continue here!')
     measurement_at_altitude = np.interp(altitude, alt, standardAtmosphereDictionary[measurement])   #
     return measurement_at_altitude
-desired_altitude = -3215
-computed_temperature = standardAtmosphere('temperature' , desired_altitude)
-computed_pressure = standardAtmosphere('pressure' , desired_altitude)
-computed_density = standardAtmosphere('density' , desired_altitude)
-computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude)
-computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude)
+desired_altitude = 0
+computed_temperature         =       standardAtmosphere('temperature' , desired_altitude)
+computed_pressure            =          standardAtmosphere('pressure' , desired_altitude)
+computed_density             =           standardAtmosphere('density' , desired_altitude)
+computed_speed_of_sound      =    standardAtmosphere('speed_of_sound' , desired_altitude)
+computed_dynamic_viscosity   =   standardAtmosphere('dynamic_viscosity' , desired_altitude)
 computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)#
 
+print(computed_temperature        )
+print(computed_pressure           )
+print(computed_density            )
+print(computed_speed_of_sound     )
+print(computed_dynamic_viscosity  )
+print(computed_kinematic_viscosity)
 
 # %%
 #Part D
