@@ -112,7 +112,7 @@ def standardAtmosphereTemperature(altitude):
     
     temperature = np.interp(altitude, alt, temp_values)#
     return  temperature
-desired_altitude = 76000
+desired_altitude = 0
 computed_temperature = standardAtmosphereTemperature(desired_altitude)
 print("The temperature at", desired_altitude, "m is", computed_temperature, "K")
 
@@ -675,6 +675,7 @@ computed_speed_of_sound = standardAtmosphere('speed_of_sound' , desired_altitude
 computed_dynamic_viscosity = standardAtmosphere('dynamic_viscosity' , desired_altitude)
 computed_kinematic_viscosity = standardAtmosphere('kinematic_viscosity' , desired_altitude)#
 
+
 # %%
 #Part D
 
@@ -845,14 +846,16 @@ sol = solve_ivp(ode, (t0, tf), [theta1, omega1], t_eval=t_eval)
 theta = sol.y[0]
 omega = sol.y[1]
 
+print("angular velcoity", omega[-1])
+
 plt.plot(sol.t, theta)
 plt.title('Angular position vs Time')
 plt.xlabel('Time (s)')
 plt.ylabel('Angular position (rad)')
 plt.grid()
 plt.savefig("angular_position_vs_time.png")
-print("heres theta")
-print(theta[-1])
+print("heres distance")
+print(L*np.sin(theta[-1]))
 
 plt.figure()
 plt.plot(sol.t, omega)
@@ -996,10 +999,10 @@ plt.xlabel('x')
 plt.ylabel('y')
 plt.title('Rosenbrock Function Contour Plot')
 
-
+#part C
 x0 = [2, -3]
 min = sp.optimize.minimize(rosenbrock, x0, method='BFGS')
-print( min)
+print("the min is", min)
 
 plt.plot(x0[0], x0[1], "o", label="start")
 plt.plot(min.x[0], min.x[1], "x", label="solution")
