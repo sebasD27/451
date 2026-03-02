@@ -1,0 +1,175 @@
+DIMENSION fuselage:noselist  2                 4  1
+DESPMTR   fuselage:noselist  "0.001; 0; .01; 0;\
+                              0.01; 0; 0; .01;"
+
+DESPMTR AR 2
+DESPMTR S 0.25
+DESPMTR fuselength 1.5
+DESPMTR wingLoc 0.45
+DESPMTR fuseDiameter 0.110
+
+SET wingspan (AR*S)^0.5
+outpmtr wingspan wingspan
+SET chord S/wingspan
+outpmtr chord chord 
+
+SET htail:AR 3
+SET htail:S  0.5*chord*S/(0.5*fuselength)
+outpmtr htail:S htail:S
+SET htail:span  (htail:AR*htail:S)^0.5
+outpmtr htail:span htail:span
+SET htail:chord htail:S/htail:span
+
+
+
+SET sweep 30
+SET vtail:AR 1.5
+set taper 0.7
+SET vtail:S  0.04*wingspan*S/(0.5*fuselength)
+outpmtr vtail:S vtail:S
+
+SET vtail:height (vtail:AR*vtail:S)^0.5
+SET vtail:rchord (2*vtail:S)/(vtail:height*(1+taper))     # cr
+SET vtail:tchord taper*vtail:rchord                 # ct
+SET vtail:mc (vtail:rchord+vtail:tchord)/2
+
+SET vtail:tipX vtail:height/2*sind(sweep)
+
+
+UDPRIM naca series 2412
+SCALE chord 
+ROTATEX 90
+STORE airfoil
+
+#makes wing 
+MARK
+RESTORE airfoil 
+TRANSLATE 0 -wingspan 0    
+RESTORE airfoil 
+TRANSLATE 0 wingspan 0 
+RULE
+
+STORE wing 
+
+MARK
+UDPRIM supell rx fuseDiameter/4  ry fuseDiameter/4 
+ROTATEY 90 0 0
+TRANSLATE 0.036 0 0#-0.075/2
+   
+#UDPRIM supell rx_e 0.075 rx_w 0.025  ry 0.075 
+UDPRIM supell rx fuseDiameter/2  ry fuseDiameter/2
+ROTATEY 90 0 0
+TRANSLATE fuselength/15 0 0
+   
+#UDPRIM supell rx 0.075 ry 0.075
+#ROTATEY 90 0 0
+#TRANSLATE fuselength/6 0 0
+   
+UDPRIM supell rx fuseDiameter/3 ry fuseDiameter/3
+ROTATEY 90 0 0
+TRANSLATE fuselength/2 0 0
+
+UDPRIM supell rx fuseDiameter/4 ry fuseDiameter/4
+ROTATEY 90 0 0
+TRANSLATE fuselength 0 0
+
+BLEND #fuselage:noselist
+STORE fuselage
+
+RESTORE wing
+TRANSLATE wingLoc 0 0 
+STORE wing
+
+UDPRIM naca series 0010
+scale htail:chord  
+ROTATEX 90
+STORE hfoil
+
+MARK
+RESTORE hfoil
+TRANSLATE fuselength-htail:chord -htail:span 0
+RESTORE hfoil
+TRANSLATE fuselength-htail:chord htail:span 0
+RULE
+STORE htail
+
+
+UDPRIM naca series 0010
+STORE vfoil
+
+
+MARK
+RESTORE vfoil
+scale vtail:rchord  
+TRANSLATE fuselength-vtail:rchord 0 0
+RESTORE vfoil
+SCALE vtail:tchord 
+TRANSLATE fuselength-vtail:rchord+vtail:tipX 0 vtail:height 
+RULE
+STORE vtail
+
+MARK
+cylinder 0 0 0 0.036 0 0 0.028
+STORE motor
+   
+RESTORE fuselage
+SET fuseV @volume
+outpmtr fuseV fuseV
+SET fusecg @xcg
+outpmtr fusecg fusecg
+STORE fuselage
+
+RESTORE wing
+SET wingV @volume
+outpmtr wingV wingV
+SET wingcg @xcg
+outpmtr wingcg wingcg
+STORE wing  
+   
+RESTORE htail
+SET htailV @volume
+outpmtr htailV htailV
+SET htailcg @xcg
+outpmtr htailcg htailcg
+STORE htail    
+   
+RESTORE vtail
+SET vtailV @volume 
+outpmtr vtailV vtailV
+SET vtailcg @xcg
+outpmtr vtailcg vtailcg
+STORE vtail
+
+RESTORE motor
+SET motorV @volume
+outpmtr motorV motorV
+SET motorcg @xcg
+outpmtr motorcg motorcg
+STORE motor
+
+
+UDPRIM box dx .131 dy .0435 dz 0.029
+TRANSLATE .25 0 .01  
+STORE battery
+   
+RESTORE fuselage
+RESTORE wing
+UNION
+RESTORE vtail
+UNION   
+RESTORE htail
+UNION
+RESTORE motor
+UNION
+STORE plane
+   
+RESTORE plane
+RESTORE battery
+subtract
+   
+SET S_wet @area
+OUTPMTR S_wet S_wet
+   
+   
+   
+   
