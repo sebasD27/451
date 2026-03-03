@@ -2,6 +2,24 @@ import pyCAPS
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+#geomtery(1-2): 3 hours
+
+#weight model(3-4): 2.5 hours
+
+#lift model(5): 3.5 hours
+
+#D vs V (6): 2 hours
+
+#Performance(7): 4-5 hours
+
+#beam theory(8): 30 min 
+
+#Sweep(9): 
+
+#extra fun pain: 
+
+
 filename = r"C:\Users\duran\Downloads\esp\ESP127\EngSketchPad\bin\451 plane.csm"
 capsProblem = pyCAPS.Problem(problemName = "sin_Transport",
                              capsFile = filename,
@@ -134,14 +152,15 @@ print("CDht", CDht)
 CDvt = 0.015 * (vtailS/ s_ref)
 print("CDvt", CDvt)
 ## total drag 
-CD = CD_w + CDfuse + CDht + CDvt + CDi
+CD0 = CD_w + CDfuse + CDht + CDvt
+CD =  CD0 + CDi
 
 print("CD", CD)
 
 
-D = 0.5*q*s_ref*CD
+D = q*s_ref*CD
 print("D", D)
-Ts =0.5 #throttle setting 
+Ts =1 #throttle setting 
 
 
 T = 15 * (rho/rhoSL) * (1 - (velo/50))* Ts
@@ -159,8 +178,8 @@ plt.show()
 #best Range 
 n_eff = 0.85
 C = 50 
-range = n_eff*(C/9.81)*(CL/CD)*(battery*9.81/totalW)
-print(range)
+Bestrange = n_eff*(C/9.81)*(CL/CD)*(battery*9.81/totalW)
+print(Bestrange)
 
 #Endurance 
 P = D * velo # min power req is endurance 
@@ -169,20 +188,103 @@ V_best_endurance = velo[i]
 P_min = P[i]
 print("V_best", V_best_endurance)
 
-#ceiling 
+#ceiling
+
+def max_excess_power(sigma, velo):
+    rho = sigma * rhoSL
+    q = 0.5 * rho * velo**2
+
+    T = 15.0 * sigma * (1.0 - velo/50.0)
+    T = np.maximum(T, 0.0)
+    
+    # drag model (yours)
+    CL = lift/(q*s_ref)
+    CDi = (CL**2)/(np.pi*e*AR)
+    CD =  CD0 + CDi
+    D = q*s_ref*CD
+
+    Pex = (T - D) * velo
+    return np.max(Pex)
+
+lo, hi = 0.05, 1.0   # sigma bounds (high altitude to sea level)
+
+for _ in range(60):
+    mid = 0.5*(lo+hi)
+    if max_excess_power(mid, velo) > 0:
+        hi = mid   # still can climb -> go higher (lower sigma)
+    else:
+        lo = mid   # can't climb -> go lower (higher sigma)
+
+sigma_ceiling = 0.5*(lo+hi)
+rho_ceiling = sigma_ceiling * rhoSL
+
+print("sigma_ceiling =", sigma_ceiling)
+print("rho_ceiling =", rho_ceiling)
 
 
 #vstall 
-phi = 10
+CL_max = 0.9
+
+phi_deg = np.linspace(0, 65, 60)
+phi = np.deg2rad(phi_deg)
 n=1/(np.cos(phi))
 
-Vs = np.sqrt((2*n*(totalW/s_ref))/(rhoSL*CL))
+Vs = np.sqrt((2 * n * totalW) / (rhoSL * s_ref * CL_max))
+plt.figure()
+plt.plot(phi_deg, Vs, label="velo")
+plt.xlabel("Bank Angle (deg)")
+plt.ylabel("Stall Speed (m/s)")
+plt.title("Stall Speed vs Bank Angle (Sea Level)")
+plt.grid(True)
+plt.legend()
+plt.show()
+
 
 #Dash speed - solve when T=D then back solve the Velo 
 
+phi_deg = np.linspace(0, 65, 100)
+phi = np.deg2rad(phi_deg)
+n=1/(np.cos(phi))
+V_dash = np.full_like(phi_deg, np.nan, dtype=float)
+
+for j in range(len(phi_deg)):
+
+    q = 0.5 * rhoSL * velo**2
+    CL = (n[j]*lift)/(q*s_ref)
+    CDi = (CL**2)/(np.pi*e*AR)
+    CD =  CD0 + CDi
+    D = q*s_ref*CD
+    f = T - D  # positive means excess thrust
+    idx = np.where(np.diff(np.sign(f)) != 0)[0]  # sign-change indices
+    if len(idx) == 0:
+        # no level flight possible at this bank angle
+        V_dash[j] = np.nan
+        continue
+    i = idx[-1]  # right-most intersection
+    # linear interpolation between velo[i] and velo[i+1]
+    V_dash[j] = velo[i] - f[i] * (velo[i+1]-velo[i]) / (f[i+1]-f[i])
+
+
+
+print("Dash speed =", V_dash, "m/s")
+
+plt.figure()
+plt.plot(phi_deg, V_dash, label="velo")
+plt.xlabel("Bank Angle (deg)")
+plt.ylabel("Dash Speed (m/s)")
+plt.title("Dash Speed vs Bank Angle (Sea Level)")
+plt.grid(True)
+plt.legend()
+plt.show()
+
+
 #turning radius 
 
+n = 2.5
 radius = (velo**2)/(9.81*np.sqrt((n**2)-1))
+i = np.argmin(radius)
+print("min radius", radius[i]) 
+
 
 #beam theory
 chord = plane.outpmtr["chord"].value 
