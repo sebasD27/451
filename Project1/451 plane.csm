@@ -2,8 +2,8 @@ DIMENSION fuselage:noselist  2                 4  1
 DESPMTR   fuselage:noselist  "0.001; 0; .01; 0;\
                               0.01; 0; 0; .01;"
 
-DESPMTR AR 2
-DESPMTR S 0.25
+DESPMTR AR 4
+DESPMTR S 0.5
 DESPMTR fuselength 1.5
 DESPMTR wingLoc 0.45
 DESPMTR fuseDiameter 0.110
@@ -170,6 +170,25 @@ subtract
 SET S_wet @area
 OUTPMTR S_wet S_wet
    
-   
+   ################################## make the propeller ###########################
+UDPARG    prop      nblade     2
+UDPARG    prop      cpower     0.2969
+UDPARG    prop      lambda     0.3
+UDPARG    prop      reyr       2.95e+6
+UDPARG    prop      rtip       0.25 #ft
+UDPARG    prop      rhub       0.1   # ft
+UDPARG    prop      clift      1
+UDPARG    prop      cdrag      0.075
+UDPARG    prop      alfa       .5   # deg
+
+# shaft/spinner parameters (all dimensions in ft)
+UDPARG    prop      shdiam     .01*2
+UDPARG    prop      shxmin    -0.05
+UDPARG    prop      shxmax     0.0
+UDPARG    prop      spdiam     0.05
+UDPARG    prop      spxmin     -.15
+
+UDPRIM    prop
+ATTRIBUTE _name $
    
    
