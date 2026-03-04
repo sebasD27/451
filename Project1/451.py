@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-#geomtery(1-2): 3 hours
+#geomtery(1-2): 3.5 hours
 
 #weight model(3-4): 2.5 hours
 
@@ -11,13 +11,13 @@ import matplotlib.pyplot as plt
 
 #D vs V (6): 2 hours
 
-#Performance(7): 4-5 hours
+#Performance(7): 5-6 hours + 
 
 #beam theory(8): 30 min 
 
 #Sweep(9): 
 
-#extra fun pain: 
+#extra fun pain: 5 hours
 
 
 filename = r"C:\Users\duran\Downloads\esp\ESP127\EngSketchPad\bin\451 plane.csm"
@@ -31,6 +31,14 @@ foamDensity = 30
 
 motorW = 0.079
 
+wingloc = plane.despmtr["wingLoc"].value
+chord = plane.outpmtr["chord"].value
+
+hchord = plane.outpmtr["htail:chord"].value
+htailloc = plane.outpmtr["htailLoc"].value
+
+vchord = plane.outpmtr["vtail:rchord"].value
+vtailloc = plane.outpmtr["vtailLoc"].value
 
 wingV  = plane.outpmtr["wingV"].value
 fuseV  = plane.outpmtr["fuseV"].value
@@ -38,10 +46,13 @@ htailV = plane.outpmtr["htailV"].value
 vtailV = plane.outpmtr["htailV"].value
 motorV = plane.outpmtr["motorV"].value
 
-propcg = 0.009
+propcg = plane.outpmtr["propellercg"].value
 batterycg = .018
 servocg   = 0.3
-receivercg  = 0.15 
+ALreceivercg =  wingloc+(0.7*chord)
+ARreceivercg = wingloc+(0.7*chord)
+Ereceivercg  =  htailloc+(0.7*hchord)
+Rreceivercg  =   vtailloc+(0.7*vchord) 
 wingcg  = plane.outpmtr["wingcg"].value
 fusecg  = plane.outpmtr["fusecg"].value
 htailcg = plane.outpmtr["htailcg"].value
@@ -50,14 +61,16 @@ motorcg = plane.outpmtr["motorcg"].value
 
 battery = 0.348
 servo  = 0.0166
-receiver = 0.0145  
+ALreceiver = 0.0145  
+ARreceiver = 0.0145
+Ereceiver = 0.0145
+Rreceiver = 0.0145
 propW  = 0.019
 motorW = 0.079
 wingW  = foamDensity *wingV 
 fuseW  = foamDensity *fuseV 
 htailW = foamDensity *htailV
 vtailW = foamDensity *vtailV
-print (wingW)
 
 parts = {
     "wing"    : (wingW,  wingcg),
@@ -66,17 +79,17 @@ parts = {
     "vtail"   : (vtailW, vtailcg),
     "battery" : (battery, batterycg),
     "servo"   : (servo,   servocg),
-    "receiver": (receiver,receivercg),
+    "ALreceiver": (ALreceiver, ALreceiver),
+    "ARreceiver": (ARreceiver, ARreceivercg),
+    "Ereceiver" : (Ereceiver, Ereceivercg),
+    "Rreceiver" : (Rreceiver, Rreceivercg),
     "motor"   : (motorW,  motorcg),
-    "prop"    : (propW,   propcg),  # prop CG usually near motor; adjust if different
+    "prop"    : (propW,   propcg),  
 }
 #print("heres parts", parts)
 
 def cg_1d(parts):
-    """
-    parts: dict of {name: (weight_or_mass, x_cg)}
-    returns: (x_cg_total, total_weight_or_mass)
-    """
+    
     total_w = 0.0
     total_moment = 0.0
 
@@ -100,22 +113,17 @@ print(f"Aircraft X_CG from nose = {x_cg_total:.6f}" )
 
 #lift and drag 
 
-
-
 lift = totalW*9.81
 print("lift",lift)
 rho = 1.225
 rhoSL = 1.225
-
 s_w = plane.outpmtr["S_wet"].value
-
 s_ref = plane.despmtr["S"].value
-
-velo = np.linspace(2,40, 100)
+velo = np.linspace(2,25, 100)
 q = 0.5*rho*velo**2
 mew = 1.789e-5
 CL = lift/(q*s_ref)
-print("C", CL)
+print("CL", CL)
 
 ##### FUSELAGE #####
 
@@ -164,10 +172,14 @@ Ts =1 #throttle setting
 
 
 T = 15 * (rho/rhoSL) * (1 - (velo/50))* Ts
+t1 = 15 * (rho/rhoSL) * (1 - (velo/50))* 0.5
+t2 = 15 * (rho/rhoSL) * (1 - (velo/50))* 0.2
 
 plt.figure()
 plt.plot(velo, D, label="Total Drag D")
 plt.plot(velo, T, label=f"Thrust Available (throttle={Ts:.2f})")
+plt.plot(velo, t1, label=f"Thrust Available (throttle={0.5:.2f})")
+plt.plot(velo, t2, label=f"Thrust Available (throttle={0.2:.2f})")
 plt.xlabel("Velocity V (m/s)")
 plt.ylabel("Drag D (N)")
 plt.title("Drag vs Velocity")
@@ -176,9 +188,12 @@ plt.legend()
 plt.show()
 
 #best Range 
+Wh_batt = 48.84           
+E_batt = Wh_batt * 3600
+
 n_eff = 0.85
 C = 50 
-Bestrange = n_eff*(C/9.81)*(CL/CD)*(battery*9.81/totalW)
+Bestrange = n_eff*E_batt *(CL/CD)*(battery*9.81/totalW)
 print(Bestrange)
 
 #Endurance 
@@ -186,9 +201,12 @@ P = D * velo # min power req is endurance
 i = np.argmin(P)
 V_best_endurance = velo[i]
 P_min = P[i]
+Endurance_s = n_eff * E_batt / P_min
 print("V_best", V_best_endurance)
 
 #ceiling
+
+#bisection method 
 
 def max_excess_power(sigma, velo):
     rho = sigma * rhoSL
@@ -197,7 +215,7 @@ def max_excess_power(sigma, velo):
     T = 15.0 * sigma * (1.0 - velo/50.0)
     T = np.maximum(T, 0.0)
     
-    # drag model (yours)
+    # drag 
     CL = lift/(q*s_ref)
     CDi = (CL**2)/(np.pi*e*AR)
     CD =  CD0 + CDi
@@ -223,6 +241,9 @@ print("rho_ceiling =", rho_ceiling)
 
 
 #vstall 
+
+
+
 CL_max = 0.9
 
 phi_deg = np.linspace(0, 65, 60)
@@ -231,7 +252,7 @@ n=1/(np.cos(phi))
 
 Vs = np.sqrt((2 * n * totalW) / (rhoSL * s_ref * CL_max))
 plt.figure()
-plt.plot(phi_deg, Vs, label="velo")
+plt.plot(phi_deg, Vs, label="velocity")
 plt.xlabel("Bank Angle (deg)")
 plt.ylabel("Stall Speed (m/s)")
 plt.title("Stall Speed vs Bank Angle (Sea Level)")
@@ -260,6 +281,7 @@ for j in range(len(phi_deg)):
         # no level flight possible at this bank angle
         V_dash[j] = np.nan
         continue
+
     i = idx[-1]  # right-most intersection
     # linear interpolation between velo[i] and velo[i+1]
     V_dash[j] = velo[i] - f[i] * (velo[i+1]-velo[i]) / (f[i+1]-f[i])
@@ -269,7 +291,7 @@ for j in range(len(phi_deg)):
 print("Dash speed =", V_dash, "m/s")
 
 plt.figure()
-plt.plot(phi_deg, V_dash, label="velo")
+plt.plot(phi_deg, V_dash, label="velocity")
 plt.xlabel("Bank Angle (deg)")
 plt.ylabel("Dash Speed (m/s)")
 plt.title("Dash Speed vs Bank Angle (Sea Level)")
@@ -283,7 +305,7 @@ plt.show()
 n = 2.5
 radius = (velo**2)/(9.81*np.sqrt((n**2)-1))
 i = np.argmin(radius)
-print("min radius", radius[i]) 
+print("min radius", np.rad2deg(radius[i])) 
 
 
 #beam theory
