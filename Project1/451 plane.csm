@@ -5,7 +5,7 @@ DESPMTR   fuselage:noselist  "0.001; 0; .01; 0;\
 DESPMTR AR 4
 DESPMTR S 0.5
 DESPMTR fuselength 1.5
-DESPMTR wingLoc 0.45
+DESPMTR wingLoc 0.45+0.051
 DESPMTR fuseDiameter 0.110
 
 SET wingspan (AR*S)^0.5
@@ -19,6 +19,7 @@ outpmtr htail:S htail:S
 SET htail:span  (htail:AR*htail:S)^0.5
 outpmtr htail:span htail:span
 SET htail:chord htail:S/htail:span
+OUTPMTR htail:chord htail:chord
 
 
 
@@ -29,7 +30,8 @@ SET vtail:S  0.04*wingspan*S/(0.5*fuselength)
 outpmtr vtail:S vtail:S
 
 SET vtail:height (vtail:AR*vtail:S)^0.5
-SET vtail:rchord (2*vtail:S)/(vtail:height*(1+taper))     # cr
+SET vtail:rchord (2*vtail:S)/(vtail:height*(1+taper))
+OUTPMTR vtail:rchord vtail:rchord# cr
 SET vtail:tchord taper*vtail:rchord                 # ct
 SET vtail:mc (vtail:rchord+vtail:tchord)/2
 
@@ -54,12 +56,12 @@ STORE wing
 MARK
 UDPRIM supell rx fuseDiameter/4  ry fuseDiameter/4 
 ROTATEY 90 0 0
-TRANSLATE 0.036 0 0#-0.075/2
+TRANSLATE 0.046 0 0#-0.075/2
    
 #UDPRIM supell rx_e 0.075 rx_w 0.025  ry 0.075 
 UDPRIM supell rx fuseDiameter/2  ry fuseDiameter/2
 ROTATEY 90 0 0
-TRANSLATE fuselength/15 0 0
+TRANSLATE (fuselength/15)+0.051 0 0
    
 #UDPRIM supell rx 0.075 ry 0.075
 #ROTATEY 90 0 0
@@ -67,11 +69,11 @@ TRANSLATE fuselength/15 0 0
    
 UDPRIM supell rx fuseDiameter/3 ry fuseDiameter/3
 ROTATEY 90 0 0
-TRANSLATE fuselength/2 0 0
+TRANSLATE (fuselength/2)+0.051 0 0
 
 UDPRIM supell rx fuseDiameter/4 ry fuseDiameter/4
 ROTATEY 90 0 0
-TRANSLATE fuselength 0 0
+TRANSLATE fuselength+0.051 0 0
 
 BLEND #fuselage:noselist
 STORE fuselage
@@ -87,9 +89,11 @@ STORE hfoil
 
 MARK
 RESTORE hfoil
-TRANSLATE fuselength-htail:chord -htail:span 0
+SET htailLoc 0.051+fuselength-htail:chord  
+OUTPMTR htailLoc htailLoc   
+TRANSLATE htailLoc -htail:span 0
 RESTORE hfoil
-TRANSLATE fuselength-htail:chord htail:span 0
+TRANSLATE 0.051+fuselength-htail:chord htail:span 0
 RULE
 STORE htail
 
@@ -101,15 +105,17 @@ STORE vfoil
 MARK
 RESTORE vfoil
 scale vtail:rchord  
-TRANSLATE fuselength-vtail:rchord 0 0
+SET vtailLoc 0.051+fuselength-vtail:rchord  
+OUTPMTR vtailLoc vtailLoc   
+TRANSLATE vtailLoc 0 0
 RESTORE vfoil
 SCALE vtail:tchord 
-TRANSLATE fuselength-vtail:rchord+vtail:tipX 0 vtail:height 
+TRANSLATE 0.051+fuselength-vtail:rchord+vtail:tipX 0 vtail:height 
 RULE
 STORE vtail
 
 MARK
-cylinder 0 0 0 0.036 0 0 0.028
+cylinder 0.015 0 0 0.051 0 0 0.028
 STORE motor
    
 RESTORE fuselage
@@ -151,6 +157,7 @@ STORE motor
 UDPRIM box dx .131 dy .0435 dz 0.029
 TRANSLATE .25 0 .01  
 STORE battery
+
    
 RESTORE fuselage
 RESTORE wing
@@ -161,6 +168,7 @@ RESTORE htail
 UNION
 RESTORE motor
 UNION
+
 STORE plane
    
 RESTORE plane
@@ -170,25 +178,115 @@ subtract
 SET S_wet @area
 OUTPMTR S_wet S_wet
    
+   
+SET length @xmax 
+
+   
    ################################## make the propeller ###########################
 UDPARG    prop      nblade     2
 UDPARG    prop      cpower     0.2969
 UDPARG    prop      lambda     0.3
 UDPARG    prop      reyr       2.95e+6
-UDPARG    prop      rtip       0.25 #ft
-UDPARG    prop      rhub       0.1   # ft
+UDPARG    prop      rtip       0.1 #ft
+UDPARG    prop      rhub       0.02   # ft
 UDPARG    prop      clift      1
 UDPARG    prop      cdrag      0.075
 UDPARG    prop      alfa       .5   # deg
 
 # shaft/spinner parameters (all dimensions in ft)
-UDPARG    prop      shdiam     .01*2
-UDPARG    prop      shxmin    -0.05
-UDPARG    prop      shxmax     0.0
-UDPARG    prop      spdiam     0.05
-UDPARG    prop      spxmin     -.15
+UDPARG    prop      shdiam     .00635
+UDPARG    prop      shxmin     0
+UDPARG    prop      shxmax     0.015
+#UDPARG    prop      spdiam     0.05
+#UDPARG    prop      spxmin     -.011
 
 UDPRIM    prop
+SELECT body 
+SET xmin @xmin
+
+TRANSLATE -xmin 0 0   
+   SELECT body 
+   set propellercg @xcg
+   outpmtr propellercg propeller
 ATTRIBUTE _name $
+
+   
+SPHERE 0.567 0 0 .025
+SELECT face
+   ATTRIBUTE _color $black
+END 
+   
+
+
+###CFD   
+STORE plane
+   
+CYLINDER 	0 0 0 length*15 0 0 length*7.5
+SPHERE 0 0 0 length*7.5
+UNION			
+UDPRIM box dx length*30 dy length*10 dz length*15
+TRANSLATE length*3 -length*5 0 
+SUBTRACT
+   
+STORE box 
+   
+RESTORE box
+RESTORE plane
+SUBTRACT 
+
+   SELECT BODY
+                    ATTRIBUTE capsAIM            $tetgenAIM;aflr3AIM;aflr4AIM;pointwiseAIM
+                    ATTRIBUTE _name              $BC_1
+                    ATTRIBUTE capsGroup          $BC_1
+                    ATTRIBUTE capsMesh           $BC_1
+                    ATTRIBUTE capsMeshLength     length 
+                 SELECT FACE 1
+                    ATTRIBUTE _color     		$red
+                    ATTRIBUTE _name              $BC_1
+                    ATTRIBUTE capsGroup          $BC_1
+                    ATTRIBUTE capsMesh           $BC_1
+                    ATTRIBUTE capsMeshLength     length 
+                 SELECT FACE 2 
+                    ATTRIBUTE _color     		$red
+                    ATTRIBUTE _name              $BC_1
+                    ATTRIBUTE capsGroup          $BC_1
+                    ATTRIBUTE capsMesh           $BC_1
+                 SELECT FACE 3
+                    ATTRIBUTE _color     		$cyan
+                    ATTRIBUTE _name              $BC_2
+                    ATTRIBUTE capsGroup          $BC_2
+                    ATTRIBUTE capsMesh           $BC_2
+                 SELECT FACE 4
+                    ATTRIBUTE _color     		$red
+                    ATTRIBUTE _name              $BC_1
+                    ATTRIBUTE capsGroup          $BC_1
+                    ATTRIBUTE capsMesh           $BC_1
+   				
+                 
+                 
+                 
+                 PATBEG i 18
+                    
+                    SET i i+4
+                    
+                    SELECT FACE i
+                    ATTRIBUTE _color     		 $cyan
+                    ATTRIBUTE _name              $BC_3
+                    ATTRIBUTE capsGroup          $BC_3
+                    ATTRIBUTE capsMesh           $BC_3
+                    
+                    SELECT edge
+                    ATTRIBUTE _viz     		 $off
+                  
+                 PATEND
+   
+   
+   
+END
+
+
+
+
+
    
    
