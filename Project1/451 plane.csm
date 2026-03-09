@@ -5,7 +5,7 @@ DESPMTR   fuselage:noselist  "0.001; 0; .01; 0;\
 DESPMTR AR 4
 DESPMTR S 0.5
 DESPMTR fuselength 1.5
-DESPMTR wingLoc 0.45+0.051
+DESPMTR wingLoc 0.460
 DESPMTR fuseDiameter 0.110
 
 SET wingspan (AR*S)^0.5
@@ -67,11 +67,11 @@ TRANSLATE (fuselength/15)+0.051 0 0
 #ROTATEY 90 0 0
 #TRANSLATE fuselength/6 0 0
    
-UDPRIM supell rx fuseDiameter/3 ry fuseDiameter/3
+UDPRIM supell rx fuseDiameter/2.5 ry fuseDiameter/2.5
 ROTATEY 90 0 0
-TRANSLATE (fuselength/2)+0.051 0 0
+TRANSLATE (fuselength/1.5)+0.051 0 0
 
-UDPRIM supell rx fuseDiameter/4 ry fuseDiameter/4
+UDPRIM supell rx fuseDiameter/3 ry fuseDiameter/3
 ROTATEY 90 0 0
 TRANSLATE fuselength+0.051 0 0
 
@@ -211,7 +211,7 @@ TRANSLATE -xmin 0 0
 ATTRIBUTE _name $
 
    
-SPHERE 0.567 0 0 .025
+SPHERE 0.570746 0 0 .025
 SELECT face
    ATTRIBUTE _color $black
 END 
