@@ -61,6 +61,7 @@ motorcg = plane.outpmtr["motorcg"].value
 
 battery = 0.348
 servo  = 0.0166
+ESC    = 0.082
 ALreceiver = 0.0145  
 ARreceiver = 0.0145
 Ereceiver = 0.0145
@@ -85,6 +86,7 @@ parts = {
     "Rreceiver" : (Rreceiver, Rreceivercg),
     "motor"   : (motorW,  motorcg),
     "prop"    : (propW,   propcg),  
+    "ESC"     : (ESC,     0.35)  # assume ESC is near servo
 }
 #print("heres parts", parts)
 
@@ -107,12 +109,43 @@ def cg_1d(parts):
 x_cg_total, totalW = cg_1d(parts)
 
 
+electronics_keys = ["servo", "ESC", "ALreceiver", "ARreceiver", "Ereceiver", "Rreceiver"]
+
+electronicsW = sum(parts[k][0] for k in electronics_keys if k in parts)
+
+labels = ["wing", "fuselage", "htail", "vtail", "battery", "motor", "prop", "electronics"]
+weights = [
+    parts["wing"][0],
+    parts["fuselage"][0],
+    parts["htail"][0],
+    parts["vtail"][0],
+    parts["battery"][0],
+    parts["motor"][0],
+    parts["prop"][0],
+    electronicsW
+]
+
+plt.figure()
+plt.pie(
+    weights,
+    labels=labels,
+    autopct="%1.1f%%",
+    startangle=90,
+    labeldistance=1.15,   # push labels outward
+    pctdistance=0.75,     # keep percentages inside
+    textprops={"fontsize": 10}
+)
+
+plt.axis("equal")
+plt.show()
 
 print(f"Total mass/weight = {totalW:.6f}")
 print(f"Aircraft X_CG from nose = {x_cg_total:.6f}" )
 
-#lift and drag 
+CG_pos = (x_cg_total - wingloc) / chord 
 
+print (f"CG as % of chord from leading edge = {CG_pos*100:.2f}%")
+#lift and drag 
 lift = totalW*9.81
 print("lift",lift)
 rho = 1.225
@@ -138,23 +171,18 @@ CDfuse = ((length*diameter)/s_ref)*(0.25 * (fineness ** -0.9) + 0.05 * (fineness
 print("CDfuse", CDfuse)
 
 ##### Wing coefficients ####
-
 CL_w = 0.2
 CD_w = 0.010
-
 b = plane.outpmtr["wingspan"].value
 
 AR = b**2/s_ref
 e  = 0.8
-
 CDi = (CL**2)/(np.pi*e*AR)
 print("CDi", CDi)
 
 ##### tail coefficients ####
 htailS = plane.outpmtr["htail:S"].value
-
 vtailS = plane.outpmtr["vtail:S"].value
-
 CDht = 0.015 * (htailS/ s_ref)
 print("CDht", CDht)
 CDvt = 0.015 * (vtailS/ s_ref)
@@ -165,12 +193,10 @@ CD =  CD0 + CDi
 
 print("CD", CD)
 
-
 D = q*s_ref*CD
 print("D", D)
+
 Ts =1 #throttle setting 
-
-
 T = 15 * (rho/rhoSL) * (1 - (velo/50))* Ts
 t1 = 15 * (rho/rhoSL) * (1 - (velo/50))* 0.5
 t2 = 15 * (rho/rhoSL) * (1 - (velo/50))* 0.2
@@ -187,14 +213,18 @@ plt.grid(True)
 plt.legend()
 plt.show()
 
+i = np.argmin(D)
+Dmin = D[i]
+
 #best Range 
-Wh_batt = 48.84           
-E_batt = Wh_batt * 3600
+voltage = 14.8        # volts
+capacity_Ah = 3.3     # amp-hours (3300mAh)
+E_batt = voltage * capacity_Ah * 3600  # joules
 
 n_eff = 0.85
-C = 50 
-Bestrange = n_eff*E_batt *(CL/CD)*(battery*9.81/totalW)
-print(Bestrange)
+C =  E_batt/(battery)
+Bestrange = n_eff*(C/9.81)*(1/Dmin)*(battery*9.81)
+print("best range:", Bestrange)
 
 #Endurance 
 P = D * velo # min power req is endurance 
@@ -203,6 +233,7 @@ V_best_endurance = velo[i]
 P_min = P[i]
 Endurance_s = n_eff * E_batt / P_min
 print("V_best", V_best_endurance)
+print("endurance:", Endurance_s)
 
 #ceiling
 
@@ -239,17 +270,50 @@ rho_ceiling = sigma_ceiling * rhoSL
 print("sigma_ceiling =", sigma_ceiling)
 print("rho_ceiling =", rho_ceiling)
 
+# ---------- Service ceiling (RC_max = 100 ft/min) ----------
+RC_crit = 100 * 0.3048 / 60.0   # m/s  (100 ft/min)
 
+def max_rate_of_climb(sigma, velo):
+    # z_dot_max = P_excess_max / W
+    Pex_max = max_excess_power(sigma, velo)
+    return Pex_max / lift   # lift = W (N)
+
+def service_ceiling_sigma(velo, lo=0.05, hi=1.0, iters=60):
+    """
+    Solve for sigma where RC_max(sigma) = RC_crit using bisection.
+    lo, hi bound sigma in [high altitude, sea level]
+    """
+    for _ in range(iters):
+        mid = 0.5*(lo+hi)
+        RC_mid = max_rate_of_climb(mid, velo)
+
+        if RC_mid > RC_crit:
+            # still climbs faster than criterion -> go higher altitude (lower sigma)
+            hi = mid
+        else:
+            # climbs slower than criterion -> go lower altitude (higher sigma)
+            lo = mid
+
+    return 0.5*(lo+hi)
+
+sigma_service = service_ceiling_sigma(velo)
+rho_service = sigma_service * rhoSL
+
+print("sigma_service =", sigma_service)
+print("rho_service   =", rho_service)
+print("RC_crit (m/s) =", RC_crit)
+print("RC_max at service (m/s) =", max_rate_of_climb(sigma_service, velo))
 #vstall 
 
 
 
-CL_max = 0.9
+CL_max = 1.5
 
 phi_deg = np.linspace(0, 65, 60)
 phi = np.deg2rad(phi_deg)
 n=1/(np.cos(phi))
 
+totalW = totalW*9.81
 Vs = np.sqrt((2 * n * totalW) / (rhoSL * s_ref * CL_max))
 plt.figure()
 plt.plot(phi_deg, Vs, label="velocity")
@@ -302,24 +366,30 @@ plt.show()
 
 #turning radius 
 
-n = 2.5
-radius = (velo**2)/(9.81*np.sqrt((n**2)-1))
-i = np.argmin(radius)
-print("min radius", np.rad2deg(radius[i])) 
+n = 4.5
+Vs = np.sqrt((2 * n * totalW) / (rhoSL * s_ref * CL_max))
+
+radius = (Vs**2)/(9.81*np.sqrt((n**2)-1))
+#i = np.argmin(radius)
+print("min radius", radius) 
 
 
 #beam theory
 chord = plane.outpmtr["chord"].value 
  
-inertia = 6.84e-5 * chord**4 
-y = 4*b/6*np.pi
+inertia = 6.84e-5 * chord**3 
+y = 4*b / (6*np.pi)
 c = 0.06*chord
-moment = lift* y 
+moment = (lift/2) * y
 
 stress = moment*c/inertia 
 
 s_allow = 100000
 n_max = (2*s_allow*inertia) / (totalW*y*c)
 phi_max = np.degrees(np.arccos(1/n_max))
-print("n",n_max)          
-print("phi", phi_max)         
+
+print("y (moment arm):", y)
+print("moment:", moment)
+print("stress at n=1:", stress)  # should be well below 100,000
+print("n_max:", n_max)           # should be > 1
+print("phi_max:", phi_max)       # should be between 0–90 degrees
