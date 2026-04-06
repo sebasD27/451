@@ -72,7 +72,7 @@ def weight_fuselage(GW, L_fus, W_fus, H_fus):
     return 6.9 * ((GW / 1000)**0.49) * (L_fus**0.61) * (S_wet**0.25)
 
 #landing gear
-def weight_landing_gear(GW, n_legs=3, retractable=False):
+def weight_landing_gear(GW, n_legs=3, retractable=True):
     """
     W_LG = 40 * (GW/1000)^0.87 * n_legs^0.34
     +10% if retractable
@@ -131,8 +131,7 @@ def weight_avionics(level='avg'):
 
 def weight_furnishings(GW, level='avg'):
     """W_FE = 6/13/23 * (GW/1000)^1.3 for low/avg/high"""
-    k = {'low': 6, 'avg': 13, 'high': 23}[level]
-    return k * ((GW / 1000)**1.3)
+    return 23 * ((GW / 1000)**1.3)
 
 def weight_ac_antiice(GW):
     """W_ACAI = 8 * (GW/1000)"""
@@ -165,9 +164,9 @@ def weight_total(GW, b, R, Omega_M, c, P_total_hp, P_tail_hp, rpm_eng, n_motors,
 
     ETOW = (W_bM + W_H + W_T + W_F + W_LG + W_DS + W_CC + 
             W_SC + W_hyd + W_EL + W_av + W_FE + W_ACAI + 
-            W_MV  + W_m + W_inst)
+            W_MV  + W_m + W_inst )
 
-    L  = 50
+    L  = 30
     H  = 10 
 
     components = [
@@ -199,17 +198,17 @@ def weight_total(GW, b, R, Omega_M, c, P_total_hp, P_tail_hp, rpm_eng, n_motors,
     ]
 
     W_total = sum(c.weight for c in components)
-
+    print(f"  Total component weight: {W_total:.1f} lbf (ETOW: {ETOW:.1f} lbf)")
     # Weighted CG
     x_cg = sum(c.weight * c.x_cg for c in components) / W_total
     z_cg = sum(c.weight * c.z_cg for c in components) / W_total
 
     return ETOW
 
-w = weight_total(GW=20000, b=2, R=20, Omega_M=30, c=2, P_total_hp=5400, P_tail_hp=800, rpm_eng=5000, n_motors=2, P_motor_hp=2700)    
-
+w = weight_total(GW=20000, b=2, R=20, Omega_M=30, c=1, P_total_hp=5400, P_tail_hp=800, rpm_eng=5000, n_motors=2, P_motor_hp=2700)    
+#
 print("heres w:", w)
-
+#
 
 
 def forward_flight_power(V_fwd, V_c, GW, rho, R, Omega, 
@@ -291,26 +290,67 @@ def mission_energy(GW, h_cruise, V_climb, V_cruise, V_descent, range_ft,
     E_total_Wh = E_climb_Wh + E_cruise_Wh + E_descent_Wh
     return E_total_Wh
 
-E = mission_energy(GW=20000, h_cruise=3000, V_climb=500, V_cruise=170, V_descent=500,
-                   range_ft=RANGE_NMI*6076, rho_sl=0.002377, rho_cruise=0.002, R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.7)
-print(f"Estimated mission energy: {E:.1f} Wh")
+#E = mission_energy(GW=20000, h_cruise=3000, V_climb=20, V_cruise=170*1.68781, V_descent=10,
+#                   range_ft=RANGE_NMI*6076, rho_sl=0.002377, rho_cruise=0.002, R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
+#print(f"Estimated mission energy: {E:.1f} Wh")
 
-batW = E / 1000
-print(f"Estimated battery weight: {batW:.1f} lbf")
 
 def residual(GW):
     W = weight_total(GW=GW, b=2, R=20, Omega_M=30, c=1, P_total_hp=5400, P_tail_hp=800, rpm_eng=5000, n_motors=2, P_motor_hp=2700)
-    E = mission_energy(GW=GW, h_cruise=3000, V_climb=20, V_cruise=170, V_descent=10,
+    E = mission_energy(GW=GW, h_cruise=3000, V_climb=20, V_cruise=170*1.68781, V_descent=10,
                    range_ft=RANGE_NMI*6076, rho_sl=0.002377, rho_cruise=0.002, R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
-    W_bat = E / 3187 # battery weight based on energy requirement and specific energy
-    return GW - (W + W_bat)
+    W_bat = E / 2000 # battery weight based on energy requirement and specific energy
+    return GW - (W + W_bat + W_PAYLOAD)  # residual between assumed GW and calculated weight + battery - payload
 
-print(f"residual(10000)  = {residual(10000):.1f}")
+print(f"residual(5000)  = {residual(5000):.1f}")
 print(f"residual(500000) = {residual(500000):.1f}")
 
-GW_solution = brentq(residual, 10000, 500000)
+GW_solution = brentq(residual, 5000, 500000)
 
 print(f"Estimated Gross Weight: {GW_solution:.1f} lbf")
+
+E = mission_energy(GW=GW_solution, h_cruise=3000, V_climb=20, V_cruise=170, V_descent=10,
+                   range_ft=RANGE_NMI*6076, rho_sl=0.002377, rho_cruise=0.002, R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
+
+print("battery weight based on mission energy:", E / 10000)
+
+
+W_bM   = weight_main_rotor_blades(b=2, R=20, Omega=30)
+W_H    = weight_main_rotor_hub(b=2, R=20, Omega=30, GW=GW_solution)
+W_T    = weight_tail_rotor(R_T=5, P_total_hp=5700, Omega_M=30)
+W_F    = weight_fuselage(GW=GW_solution, L_fus=20*2.5, W_fus=20/2, H_fus=20/2)
+W_m    = weight_motors(n_motors=2, P_motor_hp=2700)
+W_LG   = weight_landing_gear(GW=GW_solution)
+W_DS   = weight_drive_system(P_total_hp=5400, P_tail_hp=800, Omega_M=30, Omega_T=6, rpm_eng=5000)
+W_CC   = weight_cockpit_controls(GW=GW_solution)
+W_SC   = weight_system_controls(b=2, Omega_M=30, R=20, c=1)
+W_inst = weight_instruments(GW=GW_solution)
+W_hyd  = weight_hydraulics(b=2, Omega_M=30, R=20, c=1)
+W_EL   = weight_electrical(P_trans_hp=5400, GW=GW_solution, W_hyd=W_hyd)
+W_av   = weight_avionics(level='avg')
+W_FE   = weight_furnishings(GW=GW_solution, level='avg')
+W_ACAI = weight_ac_antiice(GW=GW_solution)
+W_MV   = weight_manufacturing_variation(GW=GW_solution)
+
+
+print(f" W_bM   = {W_bM:.1f}")
+print(f" W_H    = {W_H:.1f}")
+print(f" W_T    = {W_T:.1f}")
+print(f" W_F    = {W_F:.1f}")
+print(f" W_m    = {W_m:.1f}")
+print(f" W_LG   = {W_LG:.1f}")
+print(f" W_DS   = {W_DS:.1f}")
+print(f" W_CC   = {W_CC:.1f}")
+print(f" W_SC   = {W_SC:.1f}")
+print(f" W_inst = {W_inst:.1f}")
+print(f" W_hyd  = {W_hyd:.1f}")
+print(f" W_EL   = {W_EL:.1f}")
+print(f" W_av   = {W_av:.1f}")
+print(f" W_FE   = {W_FE:.1f}")
+print(f" W_ACAI = {W_ACAI:.1f}")
+print(f" W_MV   = {W_MV:.1f}")
+
+
 
 P_main = 5000
 P_avail = P_main 
@@ -322,7 +362,7 @@ P_req = forward_flight_power(V_fwd=170, V_c=0, GW=GW_solution, rho=0.002, R=20, 
 
 
 def max_speed(rho, GW, ):
-    P_avail = 20000 # constant for electric
+    P_avail = 5000 # constant for electric
     
     def excess(V_fwd):
         P_req = forward_flight_power(V_fwd=V_fwd, V_c=0, GW=GW_solution, rho=rho, R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10)
