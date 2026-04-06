@@ -1,0 +1,149 @@
+
+
+DIMENSION fuselage:noselist  2                 4  1
+DESPMTR bladeR 20 
+SET fuseR bladeR/3
+SET fuseL bladeR*2.5
+DESPMTR   fuselage:noselist  "1; 0; 1; 0;\
+                              1; 0; 0; 1;"
+
+MARK
+
+# UDPRIM supell rx fuseR/3.5 ry fuseR/3 n 4
+#ROTATEY 90 0 0
+#TRANSLATE -5 0 -1
+#
+MARK
+MARK
+   
+      POINT 0 0 -0.7
+      
+      UDPRIM supell rx 2.5 ry 3.5 n 3
+      ROTATEY 90 0 0
+      TRANSLATE 3 0 -0.7
+		
+      UDPRIM supell rx_w fuseR/1.5 rx_e fuseR/1.6  ry fuseR/1.5 n 2
+      ROTATEY 90 0 0
+      TRANSLATE 7 0 0
+  # 		BLEND fuselage:noselist
+ #  MARK
+ #  		UDPRIM supell rx fuseR/1.5 ry fuseR/1.5 n 2
+ #     ROTATEY 90 0 0
+ #     TRANSLATE 7 0 0 
+ #  
+ #  	  UDPRIM supell rx fuseR/1.5 ry fuseR/1.5 n 2
+ #     ROTATEY 90 0 0
+ #     TRANSLATE fuseL-20 0 0
+ #  		BLEND 
+ #  
+ #  MARK
+   	  UDPRIM supell rx_w fuseR/1.5 rx_e fuseR/2  ry fuseR/1.5 n 2
+      ROTATEY 90 0 0
+      TRANSLATE fuseL-20 0 0
+   
+   	
+   	 UDPRIM supell rx_w fuseR/4 rx_e fuseR/3 ry fuseR/4 n 2
+      ROTATEY 90 0 0
+      TRANSLATE fuseL-15 0 1.5
+      
+   	
+   	  UDPRIM supell rx fuseR/10 ry fuseR/10 n 2
+      ROTATEY 90 0 0
+      TRANSLATE fuseL-2 0 1.5
+   
+   	  UDPRIM supell rx fuseR/10 ry fuseR/14 n 2
+      ROTATEY 90 0 0
+      TRANSLATE fuseL 0 1.5
+      
+    
+ #blend the sections into the fuselag
+BLEND fuselage:noselist
+STORE fuse   
+RESTORE fuse  
+SELECT FACE
+ATTRIBUTE _trn $on
+   
+
+      
+     
+ 
+
+PATBEG i 5 
+    
+	UDPRIM box dx 2 dy 2 dz 6
+    TRANSLATE 9+2.1*i -1.75 1.5 
+	
+   PATEND
+PATBEG i 5 
+    
+	UDPRIM box dx 2 dy 2 dz 6
+    TRANSLATE 9+2.1*i 1.75 1.5
+	
+   PATEND 
+   
+   
+
+   ################################## make the propeller ###########################
+UDPARG    prop      nblade     2
+UDPARG    prop      cpower     0.2
+UDPARG    prop      lambda     0.3
+UDPARG    prop      reyr       2.95e+7
+UDPARG    prop      rtip       20 #ft
+UDPARG    prop      rhub       10   # ft
+UDPARG    prop      clift      1
+UDPARG    prop      cdrag      0.075
+UDPARG    prop      alfa       .25   # deg
+
+# shaft/spinner parameters (all dimensions in ft)
+UDPARG    prop      shdiam     1
+UDPARG    prop      shxmin     -1
+UDPARG    prop      shxmax     1.5
+#UDPARG    prop      spdiam     0.05
+#UDPARG    prop      spxmin     -.011
+
+UDPRIM    prop
+ROTATEX 90 0 0
+ROTATEY 90 0 0 
+
+TRANSLATE 15 0 7 
+   
+CYLINDER 0 0 0 10 0 0 1   
+TRANSLATE 11 2 -2.8 
+   
+CYLINDER 0 0 0 10 0 0 1   
+TRANSLATE 11 -2 -2.8    
+   
+
+   ################################## make the propeller ###########################
+UDPARG    prop      nblade     2
+UDPARG    prop      cpower     0.2
+UDPARG    prop      lambda     0.3
+UDPARG    prop      reyr       2.95e+7
+UDPARG    prop      rtip       5 #ft
+UDPARG    prop      rhub       2.5   # ft
+UDPARG    prop      clift      1
+UDPARG    prop      cdrag      0.075
+UDPARG    prop      alfa       .25   # deg
+
+# shaft/spinner parameters (all dimensions in ft)
+UDPARG    prop      shdiam     1
+UDPARG    prop      shxmin     -0.5
+UDPARG    prop      shxmax     .75
+#UDPARG    prop      spdiam     0.05
+#UDPARG    prop      spxmin     -.011
+
+     
+   
+UDPRIM    prop
+ROTATEZ 90 0 0
+
+TRANSLATE fuseL-0.5 -0.5 1.5 
+   
+#battery
+UDPRIM box dx 2 dy 3 dz 3 
+TRANSLATE 25 0 0    
+   
+UDPRIM box dx 5 dy 4 dz 3.5 
+TRANSLATE 6 0 0    
+      
+   
