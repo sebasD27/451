@@ -1,149 +1,478 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from dataclasses import dataclass
+from scipy.optimize import brentq
 
+@dataclass
+class Component:
+    name: str
+    weight: float   # lbf
+    x_cg: float     # ft from nose (longitudinal)
+    z_cg: float     # ft from keel (vertical)
 
-DIMENSION fuselage:noselist  2                 4  1
-DESPMTR bladeR 20 
-SET fuseR bladeR/3
-SET fuseL bladeR*2.5
-DESPMTR   fuselage:noselist  "1; 0; 1; 0;\
-                              1; 0; 0; 1;"
+N_CREW        = 2
+N_PAX         = 8
+W_PERSON      = 200       # lbf per person (including luggage)
+W_CREW        = N_CREW * W_PERSON
+W_PAX         = N_PAX  * W_PERSON
+W_ELECTRONICS = 1000      # lbf, electronics bay
+W_WEAPONS     = 1000      # lbf, defensive armament
+W_PAYLOAD     = W_CREW + W_PAX + W_ELECTRONICS + W_WEAPONS  # total fixed payload
 
-MARK
+RANGE_NMI     = 250       # nmi
+CRUISE_KTS    = 150       # kts
+MAX_KTS       = 170       # kts
+CRUISE_ALT_FT = 3000      # ft
+MAX_ALT_FT    = 14000     # ft
+HELIPAD_FT    = 40        # ft, max rotor diameter constraint
 
-# UDPRIM supell rx fuseR/3.5 ry fuseR/3 n 4
-#ROTATEY 90 0 0
-#TRANSLATE -5 0 -1
-#
-MARK
-MARK
+P_main = 2000
+
+def atmosphere(h_ft):
+    T_sl=518.67; L=0.003566
+    T=T_sl-L*h_ft
+    return 0.00237*(T/T_sl)**4.256
+#main rotor
+def weight_main_rotor_blades(b, R, Omega):
+    """
+    W_bM = 0.026 * b^0.66 * R^1.3 * (Omega*R)^0.67
+    b     : number of blades
+    R     : rotor radius (ft)
+    Omega : rotor angular velocity (rad/s)
+    """
+    return 0.026 * (b**0.66) * (R**1.3) * ((Omega * R)**0.67)
+
+#rotor hub
+def weight_main_rotor_hub(b, R, Omega, GW):
+
+    g = 32.2  # ft/s^2
+    W_bM = weight_main_rotor_blades(b, R, Omega)
+
+    # Blade flapping moment of inertia (uniform blade approximation)
+    J = (W_bM / g) * (R**2) / 3.0
+
+    W_H = (0.0037 * (b**0.28) * (R**1.5) 
+           * ((Omega * R)**0.43) 
+           * (0.67 * W_bM + g * J / R**2)**0.55)
+
+    return W_H
+#tail rotor
+
+def weight_tail_rotor(R_T, P_total_hp, Omega_M):
+    """
+    W_T = 1.4 * R_T^0.90 * (Transmission hp rating / Omega_M)^0.90
+    R_T       : tail rotor radius (ft)
+    P_total_hp: transmission hp rating
+    Omega_M   : main rotor angular velocity (rad/s)
+    """
+    return 1.4 * (R_T**0.90) * (P_total_hp / Omega_M)**0.90
+
+#fuselage
+def weight_fuselage(GW, L_fus, W_fus, H_fus):
+    """
+    W_F = 6.9 * (GW/1000)^0.49 * L_F^0.61 * (wetted_area)^0.25
+    Approximate wetted area from fuselage box dimensions
+    wetted ~ 2*(L*W + L*H + W*H)
+    """
+    S_wet = 2 * (L_fus * W_fus + L_fus * H_fus + W_fus * H_fus)
+    return 6.9 * ((GW / 1000)**0.49) * (L_fus**0.61) * (S_wet**0.25)
+
+#landing gear
+def weight_landing_gear(GW, n_legs=3, retractable=True):
+    """
+    W_LG = 40 * (GW/1000)^0.87 * n_legs^0.34
+    +10% if retractable
+    """
+    W = 40 * ((GW / 1000)**0.87) * (n_legs**0.34)
+    if retractable:
+        W *= 1.10
+    return W
+
+#motor 
+
+def weight_motors(n_motors, P_motor_hp):
+    """
+    Electric motors — approximate: ~0.5 lb/hp for modern high-power density motors
+    """
+    lbs_per_hp = (0.7457 * 2.2046) / 3.0
+
+    return n_motors * P_motor_hp * lbs_per_hp
+
+#drive system (gearboxes, shafts, etc.)
+def weight_drive_system(P_total_hp, P_tail_hp, Omega_M, Omega_T, rpm_eng, n_gearboxes=2):
    
-      POINT 0 0 -0.7
-      
-      UDPRIM supell rx 2.5 ry 3.5 n 3
-      ROTATEY 90 0 0
-      TRANSLATE 3 0 -0.7
-		
-      UDPRIM supell rx_w fuseR/1.5 rx_e fuseR/1.6  ry fuseR/1.5 n 2
-      ROTATEY 90 0 0
-      TRANSLATE 7 0 0
-  # 		BLEND fuselage:noselist
- #  MARK
- #  		UDPRIM supell rx fuseR/1.5 ry fuseR/1.5 n 2
- #     ROTATEY 90 0 0
- #     TRANSLATE 7 0 0 
- #  
- #  	  UDPRIM supell rx fuseR/1.5 ry fuseR/1.5 n 2
- #     ROTATEY 90 0 0
- #     TRANSLATE fuseL-20 0 0
- #  		BLEND 
- #  
- #  MARK
-   	  UDPRIM supell rx_w fuseR/1.5 rx_e fuseR/2  ry fuseR/1.5 n 2
-      ROTATEY 90 0 0
-      TRANSLATE fuseL-20 0 0
-   
-   	
-   	 UDPRIM supell rx_w fuseR/4 rx_e fuseR/3 ry fuseR/4 n 2
-      ROTATEY 90 0 0
-      TRANSLATE fuseL-15 0 1.5
-      
-   	
-   	  UDPRIM supell rx fuseR/10 ry fuseR/10 n 2
-      ROTATEY 90 0 0
-      TRANSLATE fuseL-2 0 1.5
-   
-   	  UDPRIM supell rx fuseR/10 ry fuseR/14 n 2
-      ROTATEY 90 0 0
-      TRANSLATE fuseL 0 1.5
-      
-    
- #blend the sections into the fuselag
-BLEND fuselage:noselist
-STORE fuse   
-RESTORE fuse  
-SELECT FACE
-ATTRIBUTE _trn $on
-   
+    W_DS = (13.6 
+            * (P_total_hp**0.82)
+            * (rpm_eng / 1000)**0.037
+            * ((P_tail_hp / P_total_hp) * (Omega_M / Omega_T))**0.068
+            * (n_gearboxes**0.066)
+            / (Omega_M**0.64))
+    return W_DS
 
-      
-     
+#cockpit controls
+def weight_cockpit_controls(GW):
+    """W_CC = 11.5 * (GW/1000)^0.40"""
+    return 11.5 * ((GW / 1000)**0.40)
+
+#flight control system (actuators, linkages, etc.)
+def weight_system_controls(b, Omega_M, R, c):
+    """W_SC = 36 * b^2.2 * (Omega*R/1000)^3.2"""
+    return 36 * (b**2.2) * (c**2.2) * ((Omega_M * R / 1000)**3.2)
+
+def weight_instruments(GW):
+    """W_T = 3.5 * (GW/1000)^1.5"""
+    return 3.5 * ((GW / 1000)**1.3)
+
+def weight_hydraulics(b, Omega_M, R, c):
+    """W_hyd = 37 * b^0.13 * (Omega*R/1000)^2.1"""
+    return 37 * (b**0.13) * (c**1.3) * ((Omega_M * R / 1000)**2.1)
+
+def weight_electrical(P_trans_hp, GW, W_hyd):
+    """W_EL = 9.6*(P_trans)^0.45 / (GW/1000)^0.40 - W_hyd"""
+    return 9.6 * (P_trans_hp**0.65) / ((GW / 1000)**0.40) - W_hyd
+
+def weight_avionics(level='avg'):
+    """W_av = 50 (low), 150 (avg), 400 (high)"""
+    return {'low': 50, 'avg': 150, 'high': 400}[level]
+
+def weight_furnishings(GW, level='avg'):
+    """W_FE = 6/13/23 * (GW/1000)^1.3 for low/avg/high"""
+    return 23 * ((GW / 1000)**1.3)
+
+def weight_ac_antiice(GW):
+    """W_ACAI = 8 * (GW/1000)"""
+    return 8 * (GW / 1000)
+
+def weight_manufacturing_variation(GW):
+    """W_MV = 4 * (GW/1000)"""
+    return 4 * (GW / 1000)
+
+
+def weight_total(GW, b, R, Omega_M, c, P_total_hp, P_tail_hp, rpm_eng, n_motors, P_motor_hp):
+
+
+    W_bM   = weight_main_rotor_blades(b, R, Omega_M)
+    W_H    = weight_main_rotor_hub(b, R, Omega_M, GW)
+    W_T    = weight_tail_rotor(R_T=R/4, P_total_hp=P_total_hp, Omega_M=Omega_M)
+    W_F    = weight_fuselage(GW, L_fus=R*2.5, W_fus=R/2, H_fus=R/2)
+    W_m    = weight_motors(n_motors, P_motor_hp)
+    W_LG   = weight_landing_gear(GW)
+    W_DS   = weight_drive_system(P_total_hp, P_tail_hp, Omega_M, Omega_T=Omega_M/5, rpm_eng=rpm_eng)
+    W_CC   = weight_cockpit_controls(GW)
+    W_SC   = weight_system_controls(b, Omega_M, R, c)
+    W_inst = weight_instruments(GW)
+    W_hyd  = weight_hydraulics(b, Omega_M, R, c)
+    W_EL   = weight_electrical(P_total_hp, GW, W_hyd)
+    W_av   = weight_avionics(level='avg')
+    W_FE   = weight_furnishings(GW, level='avg')
+    W_ACAI = weight_ac_antiice(GW)
+    W_MV   = weight_manufacturing_variation(GW)
+
+    ETOW = (W_bM + W_H + W_T + W_F + W_LG + W_DS + W_CC + 
+            W_SC + W_hyd + W_EL + W_av + W_FE + W_ACAI + 
+            W_MV  + W_m + W_inst )
+
+    L  = 30
+    H  = 10 
+
+    components = [
+        # Propulsion
+        Component("Main Rotor Blades", W_bM,            0.5*L,  H*0.9),
+        Component("Main Rotor Hub",    W_H,             0.5*L,  H*0.8),
+        Component("Tail Rotor",        W_T,             0.9*L,  H*0.9),
+        Component("Fuselage",          W_F,             0.5*L,  H*0.5),
+        Component("Motors",           W_m,              0.5*L,  H*0.7),
+        Component("Landing Gear",      W_LG,            0.5*L,   H*0.2),     
+        Component("Drive System",     W_DS,             0.45*L,  H*0.8),
+
+        # Systems
+        Component("Cockpit Controls", W_CC,             0.10*L,  0.6*H),
+        Component("System Controls",  W_SC,             0.45*L,  0.7*H),
+        Component("Instruments",      W_inst,           0.08*L,  0.7*H),
+        Component("Hydraulics",       W_hyd,            0.45*L,  0.4*H),
+        Component("Electrical",       W_EL,             0.45*L,  0.3*H),
+        Component("Avionics",        W_av,              0.45*L,  0.2*H),
+        Component("Furnishings",     W_FE,              0.5*L,   H*0.5),
+        Component("AC/Anti-ice",     W_ACAI,            0.5*L,   H*0.4),
+        Component("Manufacturing Var.", W_MV,           0.5*L,   H*0.3),
  
+        # Payload
+        Component("Crew",                W_CREW  ,      0.20*L,  0.5*H),
+        Component("Passengers",          W_PAX,         0.45*L,  0.5*H),
+        Component("Electronics Bay",     W_ELECTRONICS, 0.35*L,  0.3*H),
+        Component("Weapons Bay",         W_WEAPONS,     0.55*L,  0.3*H),
+    ]
 
-PATBEG i 5 
+    W_total = sum(c.weight for c in components)
+   # print(f"  Total component weight: {W_total:.1f} lbf (ETOW: {ETOW:.1f} lbf)")
+    # Weighted CG
+    x_cg = sum(c.weight * c.x_cg for c in components) / W_total
+    z_cg = sum(c.weight * c.z_cg for c in components) / W_total
+
+    return ETOW
+
+def forward_flight_power(V_fwd, V_c, GW, rho, R, Omega, 
+                          sigma, Cd0, kappa, f, K=4.7):
+    """
+    Leishman forward flight power
+    V_fwd : forward airspeed (ft/s)
+    V_c   : climb velocity (ft/s), 0 in cruise
+    """
+    A  = np.pi * R**2
+    mu = V_fwd / (Omega * R)        # advance ratio
+    CT = GW / (rho * A * (Omega * R)**2)  # thrust coefficient
     
-	UDPRIM box dx 2 dy 2 dz 6
-    TRANSLATE 9+2.1*i -1.75 1.5 
-	
-   PATEND
-PATBEG i 5 
+    CP = (kappa * CT**2 / (2 * mu + 1e-6)   # avoid divide by zero at hover
+        + sigma * Cd0 / 8 * (1 + K * mu**2)
+        + 0.5 * (f/A) * mu**3
+        + V_c * GW / (rho * A * (Omega * R)**3))
     
-	UDPRIM box dx 2 dy 2 dz 6
-    TRANSLATE 9+2.1*i 1.75 1.5
-	
-   PATEND 
-   
-   
+    P = rho * A * (Omega * R)**3 * CP   # power in ft*lbf/s
+    P_hp = P / 550                       # convert to horsepower
+    return P_hp
 
-   ################################## make the propeller ###########################
-UDPARG    prop      nblade     2
-UDPARG    prop      cpower     0.2
-UDPARG    prop      lambda     0.3
-UDPARG    prop      reyr       2.95e+7
-UDPARG    prop      rtip       20 #ft
-UDPARG    prop      rhub       10   # ft
-UDPARG    prop      clift      1
-UDPARG    prop      cdrag      0.075
-UDPARG    prop      alfa       .25   # deg
+def total_power(V_fwd, V_c, GW, rho, R, Omega, sigma, Cd0, kappa, f):
+    if V_fwd < 1.0:  # hover / vertical flight
+        # use hover equation
+        A  = np.pi * R**2
+        vh = np.sqrt(GW / (2 * rho * A))
+        Ph = kappa * GW * vh  # hover power (ft*lbf/s)
+        x  = V_c / vh
+        if x >= 0:
+            ratio = x/2 + np.sqrt((x/2)**2 + 1)
+        elif x >= -2:
+            ratio = x + (kappa - 1.125*x - 1.372*x**2 
+                        - 1.718*x**3 - 0.655*x**4)
+        else:
+            ratio = x/2 - np.sqrt((x/2)**2 - 1)
+        return (Ph * ratio) / 550  # hp
 
-# shaft/spinner parameters (all dimensions in ft)
-UDPARG    prop      shdiam     1
-UDPARG    prop      shxmin     -1
-UDPARG    prop      shxmax     1.5
-#UDPARG    prop      spdiam     0.05
-#UDPARG    prop      spxmin     -.011
+    else:  # forward flight
+        # use Leishman equation
+        return forward_flight_power(V_fwd, V_c, GW, rho, 
+                                     R, Omega, sigma, Cd0, kappa, f)
 
-UDPRIM    prop
-ROTATEX 90 0 0
-ROTATEY 90 0 0 
+def mission_energy(GW, h_cruise, V_climb, V_cruise, V_descent, range_ft, 
+                   rho_sl, rho_cruise, R, Omega, sigma, Cd0, kappa, f, eta):    
+    # PHASE 1: Vertical Climb (0 → h_cruise)
+    # -------------------------------------------------------------------------
+    t_climb   = h_cruise / V_climb                          # seconds
+    P_climb   = total_power(0, V_climb, GW, rho_sl, R, Omega,
+                             sigma, Cd0, kappa, f)          # hp (use SL density, conservative)
+    E_climb   = P_climb * 550 * t_climb / eta               # ft*lbf
+    E_climb_Wh = E_climb / 2655.22                          # convert ft*lbf to Wh
 
-TRANSLATE 15 0 7 
-   
-CYLINDER 0 0 0 10 0 0 1   
-TRANSLATE 11 2 -2.8 
-   
-CYLINDER 0 0 0 10 0 0 1   
-TRANSLATE 11 -2 -2.8    
-   
+    # -------------------------------------------------------------------------
+    # PHASE 2: Cruise (at h_cruise, V_cruise, V_c=0)
+    # -------------------------------------------------------------------------
+    P_cruise  = total_power(V_cruise, 0, GW, rho_cruise, R, Omega,
+                             sigma, Cd0, kappa, f)          # hp
 
-   ################################## make the propeller ###########################
-UDPARG    prop      nblade     2
-UDPARG    prop      cpower     0.2
-UDPARG    prop      lambda     0.3
-UDPARG    prop      reyr       2.95e+7
-UDPARG    prop      rtip       5 #ft
-UDPARG    prop      rhub       2.5   # ft
-UDPARG    prop      clift      1
-UDPARG    prop      cdrag      0.075
-UDPARG    prop      alfa       .25   # deg
+    # Subtract horizontal distance covered during climb/descent
+    # (climb/descent are vertical so no horizontal distance)
+    range_cruise_ft = range_ft                              # all range in cruise
+    t_cruise        = range_cruise_ft / V_cruise            # seconds
+    E_cruise        = P_cruise * 550 * t_cruise / eta       # ft*lbf
+    E_cruise_Wh     = E_cruise / 2655.22                    # Wh
 
-# shaft/spinner parameters (all dimensions in ft)
-UDPARG    prop      shdiam     1
-UDPARG    prop      shxmin     -0.5
-UDPARG    prop      shxmax     .75
-#UDPARG    prop      spdiam     0.05
-#UDPARG    prop      spxmin     -.011
+    # -------------------------------------------------------------------------
+    # PHASE 3: Vertical Descent (h_cruise → 0)
+    # -------------------------------------------------------------------------
+    t_descent  = h_cruise / V_descent                       # seconds
+    P_descent  = total_power(0, -V_descent, GW, rho_cruise, R, Omega,
+                              sigma, Cd0, kappa, f)         # hp
+    E_descent  = P_descent * 550 * t_descent / eta          # ft*lbf
+    E_descent_Wh = E_descent / 2655.22                      # Wh
 
-     
-   
-UDPRIM    prop
-ROTATEZ 90 0 0
+    # -------------------------------------------------------------------------
+    # TOTALS
+    # -------------------------------------------------------------------------
+    E_total_Wh = E_climb_Wh + E_cruise_Wh + E_descent_Wh
+    return E_total_Wh
 
-TRANSLATE fuseL-0.5 -0.5 1.5 
-   
-#battery
-UDPRIM box dx 2 dy 3 dz 3 
-TRANSLATE 25 0 0    
-   
-UDPRIM box dx 5 dy 4 dz 3.5 
-TRANSLATE 6 0 0    
-      
-   
+
+def residual(GW):
+    W = weight_total(GW=GW, b=2, R=20, Omega_M=30, c=1, P_total_hp=5400, P_tail_hp=800, rpm_eng=5000, n_motors=2, P_motor_hp=P_main)
+    E = mission_energy(GW=GW, h_cruise=3000, V_climb=20, V_cruise=170*1.68781, V_descent=10,
+                   range_ft=RANGE_NMI*6076, rho_sl=0.002377, rho_cruise=atmosphere(3000), R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
+    W_bat = E / 1190 # battery weight based on energy requirement and specific energy
+    return GW - (W + W_bat + W_PAYLOAD)  # residual between assumed GW and calculated weight + battery - payload
+
+print(f"residual(5000)  = {residual(5000):.1f}")
+print(f"residual(500000) = {residual(500000):.1f}")
+
+GW_solution = brentq(residual, 5000, 500000)
+
+print(f"Estimated Gross Weight: {GW_solution:.1f} lbf")
+
+E = mission_energy(GW=GW_solution, h_cruise=14000, V_climb=20, V_cruise=170*1.68781, V_descent=10,
+                   range_ft=RANGE_NMI*6076, rho_sl=0.002377, rho_cruise=atmosphere(14000), R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
+
+print("battery weight based on mission energy:", E / 10000)
+
+
+W_bM   = weight_main_rotor_blades(b=2, R=20, Omega=30)
+W_H    = weight_main_rotor_hub(b=2, R=20, Omega=30, GW=GW_solution)
+W_T    = weight_tail_rotor(R_T=5, P_total_hp=5700, Omega_M=30)
+W_F    = weight_fuselage(GW=GW_solution, L_fus=20*2.5, W_fus=20/2, H_fus=20/2)
+W_m    = weight_motors(n_motors=2, P_motor_hp=2700)
+W_LG   = weight_landing_gear(GW=GW_solution)
+W_DS   = weight_drive_system(P_total_hp=5400, P_tail_hp=800, Omega_M=30, Omega_T=6, rpm_eng=5000)
+W_CC   = weight_cockpit_controls(GW=GW_solution)
+W_SC   = weight_system_controls(b=2, Omega_M=30, R=20, c=1)
+W_inst = weight_instruments(GW=GW_solution)
+W_hyd  = weight_hydraulics(b=2, Omega_M=30, R=20, c=1)
+W_EL   = weight_electrical(P_trans_hp=5400, GW=GW_solution, W_hyd=W_hyd)
+W_av   = weight_avionics(level='avg')
+W_FE   = weight_furnishings(GW=GW_solution, level='avg')
+W_ACAI = weight_ac_antiice(GW=GW_solution)
+W_MV   = weight_manufacturing_variation(GW=GW_solution)
+
+
+#print(f" W_bM   = {W_bM:.1f}")
+#print(f" W_H    = {W_H:.1f}")
+#print(f" W_T    = {W_T:.1f}")
+#print(f" W_F    = {W_F:.1f}")
+#print(f" W_m    = {W_m:.1f}")
+#print(f" W_LG   = {W_LG:.1f}")
+#print(f" W_DS   = {W_DS:.1f}")
+#print(f" W_CC   = {W_CC:.1f}")
+#print(f" W_SC   = {W_SC:.1f}")
+#print(f" W_inst = {W_inst:.1f}")
+#print(f" W_hyd  = {W_hyd:.1f}")
+#print(f" W_EL   = {W_EL:.1f}")
+#print(f" W_av   = {W_av:.1f}")
+#print(f" W_FE   = {W_FE:.1f}")
+#print(f" W_ACAI = {W_ACAI:.1f}")
+#print(f" W_MV   = {W_MV:.1f}")
+
+
+
+P_req = forward_flight_power(V_fwd=170 * 1.68781, V_c=0, GW=GW_solution, rho=atmosphere(3000), R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10)
+
+print(f"Power required at 170 ft/s: {P_req:.1f} hp")
+
+
+
+def max_speed(h_ft, GW, ):
+    P_avail = P_main # constant for electric
+    rho      = atmosphere(h_ft)
+    def excess(V_fwd):
+        P_req = forward_flight_power(V_fwd=V_fwd, V_c=0, GW=GW, rho=rho, R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10)
+        return P_avail - P_req
+    
+    # Debug — check signs before brentq
+    print(f"  excess(1.0)    = {excess(150.0):.1f}")
+    print(f"  excess(1000.0) = {excess(1000.0):.1f}")
+
+    # Find speed where excess power = 0
+    V_max = brentq(excess, 150.0, 1000.0)  # ft/s
+    return V_max / 1.68781  # convert to knots
+
+
+
+altitudes = np.linspace(0, 15000, 60)
+V_max_kts = [max_speed(h, GW_solution) for h in altitudes]
+
+fig,ax = plt.subplots(figsize=(8,6))
+ax.plot(V_max_kts, altitudes/1000, 'b-', linewidth=2)
+ax.axvline(170, color='r', linestyle='--', label='170 kt requirement')
+ax.set_xlabel("Maximum Speed (kts)"); ax.set_ylabel("Altitude (1000 ft)")
+ax.set_title("Maximum Speed vs Altitude")
+ax.legend(); ax.grid(True,alpha=0.3)
+plt.tight_layout()
+plt.savefig("max_speed.png",dpi=150,bbox_inches='tight')
+plt.show()
+
+
+V_max_cruise = max_speed(h_ft=3000, GW=GW_solution)
+
+print(f"Estimated max cruise speed: {V_max_cruise:.1f} knots")
+
+
+def max_roc_at_altitude(h_ft, GW):
+    rho      = atmosphere(h_ft)
+    R = 20
+    A        = np.pi * R**2
+    vh       = np.sqrt(GW / (2 * rho * A))
+    
+    # Power required just to hover
+    P_hover  = 1.15 * GW * vh / 550    # hp
+    
+ 
+    # Excess power above hover
+    P_excess = P_main - P_hover
+    
+    if P_excess <= 0:
+        return 0   # at or above ceiling
+    
+    # Convert excess power to rate of climb
+    return P_excess * 550 / GW * 60    # ft/min
+
+print(f"Estimated max rate of climb at 14000 ft: {max_roc_at_altitude(14000, GW_solution):.1f} ft/min")
+
+
+ROC = [max_roc_at_altitude(h, GW_solution) for h in altitudes]
+print("\nMax Rate of Climb at Altitudes:", max_roc_at_altitude(3000, GW_solution)  )
+
+
+fig,ax = plt.subplots(figsize=(8,6))
+ax.plot(ROC, altitudes/1000, 'g-', linewidth=2)
+ax.axvline(100, color='r', linestyle='--', label='100 ft/min service ceiling criterion')
+ax.set_xlabel("Max Rate of Climb (ft/min)"); ax.set_ylabel("Altitude (1000 ft)")
+ax.set_title("Maximum Rate of Climb vs Altitude")
+ax.legend(); ax.grid(True,alpha=0.3)
+plt.tight_layout()
+plt.savefig("rate_of_climb.png",dpi=150,bbox_inches='tight')
+plt.show()
+
+
+def defensive_mission(GW_initial, params):
+    """
+    Mission profile:
+    1. Cruise from White House to Camp David (~60 nmi)
+    2. Emergency vertical climb to 3000 ft at max climb speed
+    3. Deploy weapons — GW drops by 1000 lbf
+    4. Fly at max speed to Andrews AFB (~10 nmi)
+    """
+
+    # Phase 1 — cruise to Camp David (full weight)
+    GW1 = GW_initial
+    E1, *_ = mission_energy(GW1, range_nmi=60, 
+                             V_cruise_fps=CRUISE_KTS*1.68781, h_cruise=3000, V_climb=20, V_descent=10,
+                             rho_sl=0.002377, rho_cruise=atmosphere(3000), R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
+
+    # Phase 2 — emergency vertical climb (full weight)
+    rho_sl = atmosphere(0)
+    V_climb_max = 30  # ft/s — max vertical climb speed
+    t_climb = 3000 / V_climb_max
+    P_climb = total_power(V_climb_max, GW1, rho_sl, R=20)
+    E2 = P_climb * 550 * t_climb / 0.9 / 2655.22  # Wh
+
+    # ---- WEAPONS DEPLOY HERE ----
+    GW2 = GW1 - W_WEAPONS - W_ELECTRONICS   # 1000 lbf lighter
+
+    # Phase 3 — max speed back to Andrews (lighter weight)
+    rho_cr = atmosphere(3000)
+    V_max = max_speed(3000, GW2)  # recompute with lighter GW
+    E3, *_ = mission_energy(GW2, range_nmi=10,
+                             V_cruise_fps=V_max*1.68781, h_cruise=3000, V_climb=20, V_descent=10,
+                             rho_sl=0.002377, rho_cruise=atmosphere(3000), R=20, Omega=30, sigma=0.08, Cd0=0.01, kappa=1.15, f=10, eta=0.9)
+
+    return E1+E2+E3, GW2
+
+
+times    = [0, t_cl/60, (t_cl+t_cr)/60, (t_cl+t_cr+t_de)/60]
+energies = [E_total, E_total-E_cl, E_total-E_cl-E_cr, 0]
+
+fig,(ax1,ax2) = plt.subplots(2,1,figsize=(10,8))
+ax1.plot(times,[e/1000 for e in energies],'b-o',linewidth=2,markersize=8)
+ax1.fill_between(times,[e/1000 for e in energies],alpha=0.2)
+ax1.axvline(t_cl/60,color='gray',linestyle='--',alpha=0.5)
+ax1.axvline((t_cl+t_cr)/60,color='gray',linestyle='--',alpha=0.5)
+ax1.set_xlabel("Time (minutes)"); ax1.set_ylabel("Energy Remaining (kWh)")
+ax1.set_title(f"Energy Onboard — 250 nmi Mission  (MTOW = {GW_solution:.0f} lbf)")
+ax1.text(t_cl/120,          E_total/1000*0.9,'Climb',   ha='center',color='green',fontsize=10)
+ax1.text((t_cl+t_cl+t_cr)/120/2+t_cl/60/2, E_total/1000*0.9,'Cruise\n150 kts @ 3000 ft',ha='center',color='blue',fontsize=10)
+ax1.text((t_cl+t_cr)/60+t_de/120, E_total/1000*0.9,'Descent',ha='center',color='red',fontsize=10)
+ax1.grid(True,alpha=0.3)
