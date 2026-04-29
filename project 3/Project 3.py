@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import math
+from contextlib import redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -54,6 +56,10 @@ class PiperCherokeeLike:
     CLmax_takeoff: float = 1.85
     CLmax_landing: float = 2.00
 
+    CLmin_clean: float = -1.10
+    CLmin_takeoff: float = -0.85
+    CLmin_landing: float = -0.65
+
     # Empennage / fuselage geometry for Raymer weight build-up
     htail_area: float = 2.6
     htail_AR: float = 4.0
@@ -85,6 +91,30 @@ class PiperCherokeeLike:
     static_thrust_max: float = 1800.0
     bsfc_kg_per_kwh: float = 0.285
 
+    @property
+    def flap_settings(self) -> Dict[str, Dict[str, float]]:
+        return {
+            "clean": {
+                "delta_CL0": 0.00,
+                "delta_CD0": 0.000,
+                "CLmax": self.CLmax_clean,
+                "CLmin": self.CLmin_clean,
+            },
+            "takeoff": {
+                "delta_CL0": 0.35,
+                "delta_CD0": 0.015,
+                "CLmax": self.CLmax_takeoff,
+                "CLmin": self.CLmin_takeoff,
+            },
+            "landing": {
+                "delta_CL0": 0.70,
+                "delta_CD0": 0.060,
+                "CLmax": self.CLmax_landing,
+                "CLmin": self.CLmin_landing,
+            },
+        }
+    
+
     # Raymer systems inputs
     avionics_uninstalled: float = 25.0
     n_tanks: int = 2
@@ -92,6 +122,8 @@ class PiperCherokeeLike:
     L_D_cruise: float = 11.5
     n_ult: float = 5.7
 
+    
+    
     # Mission settings
     cruise_alt_m: float = 2500.0
     cruise_speed_kt: float = 128.0
@@ -141,16 +173,70 @@ def atmosphere(h_m: float) -> Tuple[float, float, float]:
     return rho, sigma, a
 
 
-def aero_coeffs(ac: PiperCherokeeLike, alpha_rad: float) -> Tuple[float, float]:
-    CL = ac.CL0 + ac.CLa * alpha_rad
-    CD = ac.CD0 + ac.k * CL ** 2
+def _section_lift_coefficient(ac: PiperCherokeeLike, alpha_eff_rad: float, flap_data: Dict[str, float]) -> float:
+    CL_linear = ac.CL0 + flap_data["delta_CL0"] + ac.CLa * alpha_eff_rad
+    CLmax = flap_data["CLmax"]
+    CLmin = flap_data["CLmin"]
+
+    if CL_linear > CLmax:
+        excess = CL_linear - CLmax
+        return CLmax - 0.12 * (1.0 - math.exp(-excess / 0.35))
+    if CL_linear < CLmin:
+        excess = CLmin - CL_linear
+        return CLmin + 0.10 * (1.0 - math.exp(-excess / 0.35))
+    return CL_linear
+
+
+def _profile_drag_coefficient(ac: PiperCherokeeLike, CL: float, alpha_eff_rad: float, flap_data: Dict[str, float]) -> float:
+    CL_linear = ac.CL0 + flap_data["delta_CL0"] + ac.CLa * alpha_eff_rad
+    stall_excess = max(CL_linear - flap_data["CLmax"], flap_data["CLmin"] - CL_linear, 0.0)
+    lift_offset = CL - (ac.CL0 + flap_data["delta_CL0"])
+    return ac.CD0 + flap_data["delta_CD0"] + 0.002 * lift_offset ** 2 + 0.080 * stall_excess ** 2
+
+
+def aero_coeffs(ac: PiperCherokeeLike, alpha_rad: float, flap: str = "clean") -> Tuple[float, float]:
+    if flap not in ac.flap_settings:
+        raise ValueError(f"Unknown flap setting '{flap}'. Use one of {list(ac.flap_settings)}.")
+
+    flap_data = ac.flap_settings[flap]
+
+    # Finite-wing correction using induced angle of attack. The section lift
+    # curve is nonlinear near stall, so use a relaxed fixed-point solve.
+    CL = (ac.CL0 + flap_data["delta_CL0"] + ac.CLa * alpha_rad) / (1.0 + ac.CLa * ac.k)
+    for _ in range(16):
+        alpha_eff = alpha_rad - ac.k * CL
+        CL_new = _section_lift_coefficient(ac, alpha_eff, flap_data)
+        CL = 0.55 * CL + 0.45 * CL_new
+
+    alpha_eff = alpha_rad - ac.k * CL
+    CD_profile = _profile_drag_coefficient(ac, CL, alpha_eff, flap_data)
+    CD = CD_profile + ac.k * CL ** 2
     return CL, CD
 
 
-def lift_drag(ac: PiperCherokeeLike, V_mps: float, alpha_rad: float, h_m: float) -> Tuple[float, float, float, float]:
+def alpha_for_lift_coefficient(ac: PiperCherokeeLike, CL: float, flap: str = "clean") -> float:
+    if flap not in ac.flap_settings:
+        raise ValueError(f"Unknown flap setting '{flap}'. Use one of {list(ac.flap_settings)}.")
+
+    flap_data = ac.flap_settings[flap]
+    alpha_stall = (flap_data["CLmax"] - ac.CL0 - flap_data["delta_CL0"]) / ac.CLa + ac.k * flap_data["CLmax"]
+    lo = math.radians(-12.0)
+    hi = max(alpha_stall, lo + math.radians(1.0))
+
+    for _ in range(40):
+        mid = 0.5 * (lo + hi)
+        CL_mid, _ = aero_coeffs(ac, mid, flap)
+        if CL_mid < CL:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def lift_drag(ac: PiperCherokeeLike, V_mps: float, alpha_rad: float, h_m: float, flap: str = "clean") -> Tuple[float, float, float, float]:
     rho, _, _ = atmosphere(h_m)
     q = 0.5 * rho * V_mps ** 2
-    CL, CD = aero_coeffs(ac, alpha_rad)
+    CL, CD = aero_coeffs(ac, alpha_rad, flap)
     L = q * ac.S * CL
     D = q * ac.S * CD
     return L, D, CL, CD
@@ -385,7 +471,7 @@ def solve_trim_climb(ac: PiperCherokeeLike, h_m: float, mass_kg: float, throttle
     }
 
 
-def solve_trim_v_gamma(ac: PiperCherokeeLike, h_m: float, mass_kg: float, V_mps: float, gamma_rad: float, guess=None):
+def solve_trim_v_gamma(ac: PiperCherokeeLike, h_m: float, mass_kg: float, V_mps: float, gamma_rad: float, guess=None, flap: str = "clean"):
     W = mass_kg * G
     if guess is None:
         guess = np.array([np.deg2rad(2.0), 0.60])
@@ -396,7 +482,7 @@ def solve_trim_v_gamma(ac: PiperCherokeeLike, h_m: float, mass_kg: float, V_mps:
 
     def residuals(x):
         alpha, throttle = x
-        L, D, CL, CD = lift_drag(ac, V_mps, alpha, h_m)
+        L, D, CL, CD = lift_drag(ac, V_mps, alpha, h_m, flap=flap)
         T = thrust_available_n(ac, throttle, V_mps, h_m)
         return np.array([
             (T * math.cos(alpha) - D - W * math.sin(gamma_rad)) / W,
@@ -405,7 +491,7 @@ def solve_trim_v_gamma(ac: PiperCherokeeLike, h_m: float, mass_kg: float, V_mps:
 
     res = least_squares(residuals, x0, bounds=(lb, ub), xtol=1e-10, ftol=1e-10, gtol=1e-10, max_nfev=150)
     alpha, throttle = res.x
-    L, D, CL, CD = lift_drag(ac, V_mps, alpha, h_m)
+    L, D, CL, CD = lift_drag(ac, V_mps, alpha, h_m, flap=flap)
     T = thrust_available_n(ac, throttle, V_mps, h_m)
 
     good = np.max(np.abs(res.fun)) < 6e-4 and throttle <= 1.0 + 1e-6
@@ -435,7 +521,7 @@ def estimate_takeoff_landing(ac: PiperCherokeeLike, takeoff_mass_kg: float, land
     Vlof = 1.2 * Vs_to
     alpha_to = math.radians(6.0)
     V_avg = 0.7 * Vlof
-    L_avg, D_avg, _, _ = lift_drag(ac, V_avg, alpha_to, 0.0)
+    L_avg, D_avg, _, _ = lift_drag(ac, V_avg, alpha_to, 0.0, flap="takeoff")
     T_avg = thrust_available_n(ac, 1.0, V_avg, 0.0)
     mu_roll = 0.03
     a_avg = (T_avg - D_avg - mu_roll * max(W_to - L_avg, 0.0)) / takeoff_mass_kg
@@ -561,32 +647,67 @@ def make_constraint_diagram(ac: PiperCherokeeLike, takeoff_mass_kg: float, outpa
 def report_aero_polar(ac, mass_kg, h_m, outpath):
     rho, _, _ = atmosphere(h_m)
     W = mass_kg * G
-    Vs = math.sqrt(2*W / (rho * ac.S * ac.CLmax_clean))
-    V_range = np.linspace(Vs * 1.05, 175 * KT_TO_MPS * 1.1, 120)
-    V_kt=[]; CL_a=[]; CD_a=[]; CDi_a=[]; D_a=[]; LD_a=[]
-    for V in V_range:
-        q = 0.5*rho*V**2
-        CL = W/(q*ac.S)
-        if CL > ac.CLmax_clean or CL < 0: continue
-        CDi = ac.k*CL**2; CD = ac.CD0+CDi
-        D = q*ac.S*CD
-        V_kt.append(V*MPS_TO_KT); CL_a.append(CL); CD_a.append(CD)
-        CDi_a.append(CDi); D_a.append(D); LD_a.append(CL/CD)
-    V_kt=np.array(V_kt); CL_a=np.array(CL_a); CD_a=np.array(CD_a)
-    CDi_a=np.array(CDi_a); D_a=np.array(D_a); LD_a=np.array(LD_a)
-    bi = np.argmax(LD_a)
-    print(f"\n  Best L/D:  {LD_a[bi]:.2f}  at {V_kt[bi]:.1f} kts")
-    print(f"  Min drag:  {D_a.min():.1f} N  at {V_kt[np.argmin(D_a)]:.1f} kts")
+    aero_data = {}
+
+    for flap, flap_data in ac.flap_settings.items():
+        Vs = math.sqrt(2.0 * W / (rho * ac.S * flap_data["CLmax"]))
+        V_range = np.linspace(Vs * 1.05, 175 * KT_TO_MPS * 1.1, 120)
+        V_kt=[]; CL_a=[]; CD_a=[]; CDi_a=[]; CDp_a=[]; D_a=[]; LD_a=[]
+
+        for V in V_range:
+            q = 0.5 * rho * V ** 2
+            CL_req = W / (q * ac.S)
+            if CL_req > flap_data["CLmax"] or CL_req < 0:
+                continue
+
+            alpha = alpha_for_lift_coefficient(ac, CL_req, flap)
+            CL, CD = aero_coeffs(ac, alpha, flap)
+            CDi = ac.k * CL ** 2
+            CDp = CD - CDi
+            D = q * ac.S * CD
+
+            V_kt.append(V * MPS_TO_KT); CL_a.append(CL); CD_a.append(CD)
+            CDi_a.append(CDi); CDp_a.append(CDp); D_a.append(D); LD_a.append(CL / CD)
+
+        aero_data[flap] = {
+            "V_kt": np.array(V_kt),
+            "CL": np.array(CL_a),
+            "CD": np.array(CD_a),
+            "CDi": np.array(CDi_a),
+            "CDp": np.array(CDp_a),
+            "D": np.array(D_a),
+            "LD": np.array(LD_a),
+        }
+
+        if len(LD_a) > 0:
+            LD_np = aero_data[flap]["LD"]
+            V_np = aero_data[flap]["V_kt"]
+            D_np = aero_data[flap]["D"]
+            bi = np.argmax(LD_np)
+            print(f"\n  {flap.title()} best L/D: {LD_np[bi]:.2f} at {V_np[bi]:.1f} kts")
+            print(f"  {flap.title()} min drag: {D_np.min():.1f} N at {V_np[np.argmin(D_np)]:.1f} kts")
+
     fig, axs = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle(f"Aerodynamic Polar  h={h_m:.0f} m", fontsize=11)
-    axs[0,0].plot(V_kt, CL_a, 'b-', lw=2); axs[0,0].set(xlabel='Speed (kts)', ylabel='CL', title='Lift Coefficient'); axs[0,0].grid(alpha=0.3)
-    axs[0,1].plot(V_kt, D_a/1000, 'r-', lw=2, label='Total')
-    axs[0,1].plot(V_kt, (CDi_a/CD_a)*D_a/1000, 'r--', lw=1.5, label='Induced')
-    axs[0,1].plot(V_kt, ((CD_a-CDi_a)/CD_a)*D_a/1000, 'b--', lw=1.5, label='Profile')
-    axs[0,1].set(xlabel='Speed (kts)', ylabel='Drag (kN)', title='Drag Breakdown'); axs[0,1].legend(); axs[0,1].grid(alpha=0.3)
-    axs[1,0].plot(CL_a, CD_a, 'g-', lw=2); axs[1,0].set(xlabel='CL', ylabel='CD', title='Drag Polar'); axs[1,0].grid(alpha=0.3)
-    axs[1,1].plot(V_kt, LD_a, 'm-', lw=2)
-    axs[1,1].axvline(V_kt[bi], color='k', ls='--', label=f'Best L/D={LD_a[bi]:.1f}')
+    fig.suptitle(f"Aerodynamic Polar and Flap Settings  h={h_m:.0f} m", fontsize=11)
+    colors = {"clean": "b", "takeoff": "g", "landing": "r"}
+
+    for flap, data in aero_data.items():
+        if len(data["V_kt"]) == 0:
+            continue
+        c = colors.get(flap, None)
+        label = flap.title()
+        qS = 0.5 * rho * (data["V_kt"] * KT_TO_MPS) ** 2 * ac.S
+
+        axs[0,0].plot(data["V_kt"], data["CL"], color=c, lw=2, label=label)
+        axs[0,1].plot(data["V_kt"], data["D"] / 1000.0, color=c, lw=2, label=f"{label} total")
+        axs[0,1].plot(data["V_kt"], qS * data["CDi"] / 1000.0, color=c, lw=1.2, ls="--", label=f"{label} induced")
+        axs[0,1].plot(data["V_kt"], qS * data["CDp"] / 1000.0, color=c, lw=1.2, ls=":", label=f"{label} profile")
+        axs[1,0].plot(data["CL"], data["CD"], color=c, lw=2, label=label)
+        axs[1,1].plot(data["V_kt"], data["LD"], color=c, lw=2, label=label)
+
+    axs[0,0].set(xlabel='Speed (kts)', ylabel='CL', title='Lift Coefficient'); axs[0,0].legend(); axs[0,0].grid(alpha=0.3)
+    axs[0,1].set(xlabel='Speed (kts)', ylabel='Drag (kN)', title='Drag Breakdown'); axs[0,1].legend(fontsize=7); axs[0,1].grid(alpha=0.3)
+    axs[1,0].set(xlabel='CL', ylabel='CD', title='Drag Polar'); axs[1,0].legend(); axs[1,0].grid(alpha=0.3)
     axs[1,1].set(xlabel='Speed (kts)', ylabel='L/D', title='L/D Ratio'); axs[1,1].legend(); axs[1,1].grid(alpha=0.3)
     plt.tight_layout(); plt.savefig(outpath, dpi=160); plt.close()
 
@@ -596,7 +717,10 @@ def report_performance(ac, mass_kg, outpath):
         rho,_,_ = atmosphere(h); W=mass_kg*G
         Vs = math.sqrt(2*W/(rho*ac.S*ac.CLmax_clean)); V=Vs*1.3
         T = thrust_available_n(ac, 1.0, V, h)
-        q = 0.5*rho*V**2; CL=W/(q*ac.S); CD=ac.CD0+ac.k*CL**2; D=q*ac.S*CD
+        q = 0.5*rho*V**2; CL_req=W/(q*ac.S)
+        alpha = alpha_for_lift_coefficient(ac, CL_req, "clean")
+        CL, CD = aero_coeffs(ac, alpha, "clean")
+        D=q*ac.S*CD
         RC_list.append(max(0.0,(T-D)*V/W))
     RC=np.array(RC_list)
     ci = np.where(RC < 0.5)[0]
@@ -729,16 +853,26 @@ def report_landing_gear(ac, x_cg_fwd, x_cg_aft,
 
 def report_trade_studies(ac, outpath):
     base_S=ac.S; base_b=ac.b; base_CD0=ac.CD0; base_AR=ac.AR
+    base_CLa=ac.CLa
+    base_CLmax_clean=ac.CLmax_clean
+    base_CLmax_takeoff=ac.CLmax_takeoff
+    base_CLmax_landing=ac.CLmax_landing
     def breguet_range(ac, mass_kg):
         rho,_,_=atmosphere(ac.cruise_alt_m); V_cr=ac.cruise_speed_kt*KT_TO_MPS
-        q=0.5*rho*V_cr**2; W=mass_kg*G; CL=W/(q*ac.S)
-        CD=ac.CD0+ac.k*CL**2; LD=CL/CD
+        q=0.5*rho*V_cr**2; W=mass_kg*G; CL_req=W/(q*ac.S)
+        if CL_req >= ac.CLmax_clean:
+            return 0.0
+        alpha=alpha_for_lift_coefficient(ac,CL_req,"clean")
+        CL,CD=aero_coeffs(ac,alpha,"clean"); LD=CL/CD
         mtow,empty,_=size_aircraft_weights(ac); W1=(empty+ac.m_payload)*G
         return (V_cr/G)*LD*math.log(W/W1)*M_TO_NM
     def dash_margin(ac, mass_kg):
         rho,_,_=atmosphere(ac.dash_check_alt_m); W=mass_kg*G
         V_d=175*KT_TO_MPS; q=0.5*rho*V_d**2
-        CL=W/(q*ac.S); D=q*ac.S*(ac.CD0+ac.k*CL**2)
+        CL_req=W/(q*ac.S)
+        alpha=alpha_for_lift_coefficient(ac,CL_req,"clean")
+        CL,CD=aero_coeffs(ac,alpha,"clean")
+        D=q*ac.S*CD
         return thrust_available_n(ac,1.0,V_d,ac.dash_check_alt_m)-D
     S_vals=np.linspace(9,20,15); rS=[]; dS=[]
     for S in S_vals:
@@ -752,13 +886,26 @@ def report_trade_studies(ac, outpath):
         mtow,empty,_=size_aircraft_weights(ac); mass=empty+ac.m_payload+ac.m_fuel_max
         rAR.append(breguet_range(ac,mass)); dAR.append(dash_margin(ac,mass))
     ac.b=base_b
-    airfoils={'NACA 2412':0.028,'NACA 65-415':0.023,'Clark Y':0.030,'Custom low-drag':0.020}
+    airfoils={
+        'NACA 2412': {'CD0':0.028, 'CLa':5.0, 'CLmax_clean':1.50, 'CLmax_takeoff':1.80, 'CLmax_landing':2.00},
+        'NACA 65-415': {'CD0':0.023, 'CLa':5.4, 'CLmax_clean':1.40, 'CLmax_takeoff':1.70, 'CLmax_landing':1.90},
+        'Clark Y': {'CD0':0.030, 'CLa':4.8, 'CLmax_clean':1.55, 'CLmax_takeoff':1.85, 'CLmax_landing':2.05},
+        'Custom low-drag': {'CD0':0.020, 'CLa':5.2, 'CLmax_clean':1.45, 'CLmax_takeoff':1.75, 'CLmax_landing':1.95},
+    }
     af_names=list(airfoils.keys()); rAF=[]; dAF=[]
-    for name,cd0 in airfoils.items():
-        ac.CD0=cd0
+    for name,params in airfoils.items():
+        ac.CD0=params['CD0']
+        ac.CLa=params['CLa']
+        ac.CLmax_clean=params['CLmax_clean']
+        ac.CLmax_takeoff=params['CLmax_takeoff']
+        ac.CLmax_landing=params['CLmax_landing']
         mtow,empty,_=size_aircraft_weights(ac); mass=empty+ac.m_payload+ac.m_fuel_max
         rAF.append(breguet_range(ac,mass)); dAF.append(dash_margin(ac,mass))
     ac.CD0=base_CD0
+    ac.CLa=base_CLa
+    ac.CLmax_clean=base_CLmax_clean
+    ac.CLmax_takeoff=base_CLmax_takeoff
+    ac.CLmax_landing=base_CLmax_landing
     print("\nTrade Studies")
     print(f"  Best S for range:    {S_vals[np.argmax(rS)]:.1f} m²")
     print(f"  Best AR for range:   {AR_vals[np.argmax(rAR)]:.1f}")
@@ -777,8 +924,9 @@ def report_trade_studies(ac, outpath):
 # -----------------------------------------------------------------------------
 # Mission simulation
 # -----------------------------------------------------------------------------
-def run_mission() -> Dict[str, float]:
-    ac = PiperCherokeeLike()
+def run_mission(ac=None) -> Dict[str, float]:
+    if ac is None:
+        ac = PiperCherokeeLike()
     mtow_kg, empty_kg, breakdown = size_aircraft_weights(ac)
 
     range_req_nm = 500.0
@@ -921,7 +1069,7 @@ def run_mission() -> Dict[str, float]:
     descent_steps = 0
     while h_m > 1.0:
         mass_kg = empty_kg + ac.m_payload + fuel_kg
-        trim = solve_trim_v_gamma(ac, h_m, mass_kg, descent_speed_mps, descent_gamma_rad, guess=descent_guess)
+        trim = solve_trim_v_gamma(ac, h_m, mass_kg, descent_speed_mps, descent_gamma_rad, guess=descent_guess, flap="landing")
         if not trim["success"]:
             raise RuntimeError(f"Descent trim failed at h = {h_m:.1f} m, residuals = {trim['residuals']}")
 
@@ -1072,4 +1220,24 @@ def run_mission() -> Dict[str, float]:
 
 
 if __name__ == "__main__":
-    run_mission()
+    fuel_guess = 120.0
+
+    for _ in range(20):
+        ac = PiperCherokeeLike()
+        ac.m_fuel_max = fuel_guess
+        reserve_fuel_kg = 0.1 * fuel_guess
+
+        with redirect_stdout(StringIO()):
+            mission_result = run_mission(ac)
+        fuel_used = ac.m_fuel_max - mission_result["fuel_remaining_kg"]
+        fuel_required = fuel_used + reserve_fuel_kg
+
+        if abs(fuel_required - fuel_guess) < 0.1:
+            break
+
+        fuel_guess = 0.5 * fuel_guess + 0.5 * fuel_required
+
+    ac = PiperCherokeeLike()
+    ac.m_fuel_max = fuel_guess
+    run_mission(ac)
+    print(f"Final fuel guess: {fuel_guess:.1f} kg")
