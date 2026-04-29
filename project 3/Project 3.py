@@ -53,8 +53,8 @@ class PiperCherokeeLike:
     CL0: float = 0.20
     CLa: float = 5.0
     CLmax_clean: float = 1.55
-    CLmax_takeoff: float = 1.85
-    CLmax_landing: float = 2.00
+    CLmax_takeoff: float = 2.20
+    CLmax_landing: float = 2.60
 
     CLmin_clean: float = -1.10
     CLmin_takeoff: float = -0.85
@@ -77,8 +77,12 @@ class PiperCherokeeLike:
     tail_arm: float = 4.4
 
     # Landing gear lengths
-    main_gear_length: float = 0.75
+    main_gear_length: float = 0.95
     nose_gear_length: float = 0.55
+    tail_clearance_height: float = 1.25
+    x_main_gear: float = 2.75
+    x_nose_gear: float = 0.00
+    gear_track: float = 9.53
 
     # Payload / propulsion
     n_engines: int = 1
@@ -88,7 +92,7 @@ class PiperCherokeeLike:
     m_fuel_max: float = 131.0
     engine_hp: float = 260.0
     prop_eff: float = 0.84
-    static_thrust_max: float = 1800.0
+    static_thrust_max: float = 2600.0
     bsfc_kg_per_kwh: float = 0.285
 
     @property
@@ -532,7 +536,7 @@ def estimate_takeoff_landing(ac: PiperCherokeeLike, takeoff_mass_kg: float, land
     Vs_land = math.sqrt(2.0 * W_land / (rho * ac.S * ac.CLmax_landing))
     Vtd = 1.3 * Vs_land
     alpha_land = math.radians(7.0)
-    L_td, D_td, _, _ = lift_drag(ac, 0.7 * Vtd, alpha_land, 0.0)
+    L_td, D_td, _, _ = lift_drag(ac, 0.7 * Vtd, alpha_land, 0.0, flap="landing")
     mu_brake = 0.15
     decel = mu_brake * G + 0.5 * D_td / landing_mass_kg + 0.02 * max(W_land - L_td, 0.0) / landing_mass_kg
     s_land = Vtd ** 2 / (2.0 * max(decel, 1.0))
@@ -827,8 +831,9 @@ def report_landing_gear(ac, x_cg_fwd, x_cg_aft,
 
     # 2. Touchdown clearance — tail clearance at rotation >= 15 deg
     dist_main_to_tail = ac.fuselage_length - x_main
+    tail_clearance_height = getattr(ac, "tail_clearance_height", ac.main_gear_length)
     touchdown_angle   = math.degrees(math.atan(
-        ac.main_gear_length / dist_main_to_tail
+        tail_clearance_height / dist_main_to_tail
     ))
 
     # 3. Overturn criteria — 55-65 deg (uses aft CG per slide)
@@ -849,7 +854,7 @@ def report_landing_gear(ac, x_cg_fwd, x_cg_aft,
     print(f"  Overturn angle:        {overturn_angle:.1f} deg  "
           f"({'PASS' if 55 <= overturn_angle <= 65 else 'FAIL'}, need 55-65)")
     print(f"  Nose load (aft CG):    {F_nose*100:.1f}%  (want 8-15%)")
-    print(f"  Nose load (fwd CG):    {F_nose_fwd*100:.1f}%")
+    print(f"  Nose load (fwd CG):    {F_nose_fwd*100:.1f}%  (want 8-15%)")
 
 def report_trade_studies(ac, outpath):
     base_S=ac.S; base_b=ac.b; base_CD0=ac.CD0; base_AR=ac.AR
@@ -994,7 +999,7 @@ def run_mission(ac=None) -> Dict[str, float]:
     climb_steps = 0
     while h_m < cruise_alt_m - 1.0:
         mass_kg = empty_kg + ac.m_payload + fuel_kg
-        trim = solve_trim_climb(ac, h_m, mass_kg, throttle=1.0, z_dot_mps=climb_rate_mps, guess=climb_guess)
+        trim = solve_trim_climb(ac, h_m, mass_kg, throttle=0.60, z_dot_mps=climb_rate_mps, guess=climb_guess)
         if not trim["success"]:
             raise RuntimeError(f"Climb trim failed at h = {h_m:.1f} m, residuals = {trim['residuals']}")
 
@@ -1131,6 +1136,8 @@ def run_mission(ac=None) -> Dict[str, float]:
     print("------------------")
     print(f"500 nm range met:        {total_range_nm >= 500.0}")
     print(f"175 kt dash met:         {False if dash_sl is None else dash_sl_kt >= ac.dash_speed_req_kt}")
+    print(f"1000 ft takeoff met:     {runway['takeoff_ground_roll_m'] <= 1000.0 * 0.3048}")
+    print(f"1000 ft landing met:     {runway['landing_ground_roll_m'] <= 1000.0 * 0.3048}")
 
     fig, axs = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
     axs[0].plot(arr["x_m"] * M_TO_NM, arr["h_m"])
@@ -1195,9 +1202,9 @@ def run_mission(ac=None) -> Dict[str, float]:
     report_landing_gear(ac,
                     x_cg_fwd = 2.37,   # most forward CG from your envelope
                     x_cg_aft = 2.48,   # most aft CG from your envelope
-                    x_main   = 2.80,
-                    x_nose   = 0.90,
-                    track    = 2.50,
+                    x_main   = ac.x_main_gear,
+                    x_nose   = ac.x_nose_gear,
+                    track    = ac.gear_track,
                     outpath  = outdir / "landing_gear.png")
 
     print("\n" + "="*50)
