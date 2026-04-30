@@ -1,0 +1,206 @@
+DIMENSION fuselage:noselist  2                 4  1
+
+DESPMTR   fuselage:noselist  ".5; 0; 1; 0;\
+                              .5; 0; 0; 1;"
+
+
+DESPMTR wingspan 10.8
+DESPMTR dihedral 7
+DESPMTR S 12.8
+SET AR (wingspan^2)/S
+DESPMTR fuselength 7.3
+DESPMTR wingLoc 1.83
+DESPMTR fuseDiameter 0.6
+
+SET chord S/wingspan
+outpmtr chord chord 
+
+SET htail:AR 3
+SET htail:S  0.5*chord*S/(0.5*fuselength)
+outpmtr htail:S htail:S
+SET htail:span  (htail:AR*htail:S)^0.5
+outpmtr htail:span htail:span
+SET htail:chord htail:S/htail:span
+OUTPMTR htail:chord htail:chord
+
+
+SET sweep 30
+SET vtail:AR 1.5
+set taper 0.7
+SET vtail:S  0.04*wingspan*S/(0.5*fuselength)
+outpmtr vtail:S vtail:S
+
+SET vtail:height (vtail:AR*vtail:S)^0.5
+SET vtail:rchord (2*vtail:S)/(vtail:height*(1+taper))
+OUTPMTR vtail:rchord vtail:rchord# cr
+SET vtail:tchord taper*vtail:rchord                 # ct
+SET vtail:mc (vtail:rchord+vtail:tchord)/2
+
+SET vtail:tipX vtail:height/2*sind(sweep)
+
+SET     wtipz      0+4/2*tand(dihedral)
+
+UDPRIM naca series 2412
+SCALE chord 
+ROTATEX 90
+STORE airfoil
+
+#makes wing 
+MARK
+RESTORE airfoil 
+TRANSLATE 0 -wingspan/2 wtipz   
+RESTORE airfoil
+   
+RESTORE airfoil 
+TRANSLATE 0 wingspan/2 wtipz 
+RULE
+
+STORE wing
+
+RESTORE wing
+TRANSLATE wingLoc 0 -.5 
+
+
+
+MARK
+
+#POINT 0 0 -.1
+   
+UDPRIM supell rx_e fuseDiameter/1.25 rx_w fuseDiameter/3  ry fuseDiameter/1.5
+ROTATEY 90 0 0
+TRANSLATE 0 0 0
+   
+UDPRIM supell rx_e fuseDiameter/1.1 rx_w fuseDiameter/2 ry fuseDiameter/1.15 
+ROTATEY 90 0 0
+TRANSLATE wingLoc-fuselength/20 0 0
+   
+
+UDPRIM supell rx fuseDiameter  ry fuseDiameter
+ROTATEY 90 0 0
+TRANSLATE (fuselength/30)+wingLoc 0 0
+   
+   
+UDPRIM supell rx fuseDiameter/1.1  ry fuseDiameter/1.1
+ROTATEY 90 0 0
+TRANSLATE (fuselength/2) 0 0   
+   
+
+UDPRIM supell rx fuseDiameter/2.5  ry fuseDiameter/3
+ROTATEY 90 0 0
+TRANSLATE (fuselength) 0 0    
+  
+BLEND #fuselage:noselist   
+
+STORE fuselage
+RESTORE fuselage
+SELECT face
+ATTRIBUTE _trn $on
+
+   
+UDPRIM naca series 0010
+scale htail:chord  
+ROTATEX 90
+STORE hfoil
+
+MARK
+RESTORE hfoil
+SET htailLoc 0.051+fuselength-htail:chord  
+OUTPMTR htailLoc htailLoc   
+TRANSLATE htailLoc -htail:span 0
+RESTORE hfoil
+TRANSLATE fuselength-htail:chord htail:span 0
+RULE
+STORE htail
+RESTORE htail
+
+UDPRIM naca series 0010
+STORE vfoil
+
+
+MARK
+RESTORE vfoil
+scale vtail:rchord  
+SET vtailLoc fuselength-vtail:rchord  
+OUTPMTR vtailLoc vtailLoc   
+TRANSLATE vtailLoc 0 0
+RESTORE vfoil
+SCALE vtail:tchord 
+TRANSLATE fuselength-vtail:rchord+vtail:tipX 0 vtail:height 
+RULE
+STORE vtail
+RESTORE vtail
+
+
+
+  ################################## make the propeller ###########################
+UDPARG    prop      nblade     2
+UDPARG    prop      cpower     0.2969
+UDPARG    prop      lambda     0.3
+UDPARG    prop      reyr       2.95e+6
+UDPARG    prop      rtip       .75 #ft
+UDPARG    prop      rhub       0.2   # ft
+UDPARG    prop      clift      1
+UDPARG    prop      cdrag      0.075
+UDPARG    prop      alfa       .25   # deg
+
+# shaft/spinner parameters (all dimensions in ft)
+UDPARG    prop      shdiam     .15
+UDPARG    prop      shxmin     0
+UDPARG    prop      shxmax     0.15
+UDPARG    prop      spdiam     0.25
+UDPARG    prop      spxmin     -.5
+
+UDPRIM    prop
+TRANSLATE  -.05 0 0
+ROTATEX 20 0 0
+
+CYLINDER 0 0 0 0 0 -0.65 .05
+TRANSLATE 0.25 0 -fuseDiameter/1.25
+
+
+
+CYLINDER 0 -1 0 0 -1 -0.65 .05
+TRANSLATE 2.75 0 -fuseDiameter/1.25
+CYLINDER 0 1 0 0 1 -0.65 .05
+TRANSLATE 2.75 0 -fuseDiameter/1.25
+
+
+CYLINDER .1 0 -.15 1.1 0 -.15 .25
+SELECT face
+ATTRIBUTE _color $red
+
+
+MARK
+UDPRIM supell rx_e fuseDiameter/1.1 rx_w fuseDiameter/2 ry fuseDiameter/1.15 
+ROTATEY 90 0 0
+TRANSLATE wingLoc-fuselength/20 0 0
+   
+
+UDPRIM supell rx fuseDiameter  ry fuseDiameter
+ROTATEY 90 0 0
+TRANSLATE (fuselength/30)+wingLoc 0 0
+   
+   
+UDPRIM supell rx fuseDiameter/1.1  ry fuseDiameter/1.1
+ROTATEY 90 0 0
+TRANSLATE (fuselength/2) 0 0
+BLEND
+SCALE 0.9
+TRANSLATE 0.25 0 0 
+SELECT face
+ATTRIBUTE _color $blue
+
+
+MARK
+UDPRIM supell rx fuseDiameter/1.25  ry fuseDiameter/1.25
+ROTATEY 90 0 0
+TRANSLATE (fuselength/4)+wingLoc 0 0
+   
+UDPRIM supell rx fuseDiameter/2.5  ry fuseDiameter/3
+ROTATEY 90 0 0
+TRANSLATE (fuselength/1.2) 0 0    
+BLEND
+SCALE 0.9
+TRANSLATE 0.5 0 0 
+SELECT face
+ATTRIBUTE _color $cyan
