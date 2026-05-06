@@ -76,13 +76,15 @@ class PiperCherokeeLike:
     fuselage_height: float = 1.4
     tail_arm: float = 4.4
 
-    # Landing gear lengths
+    # Landing gear lengths (height)
     main_gear_length: float = 0.95
     nose_gear_length: float = 0.55
+
+    # Meters
     tail_clearance_height: float = 1.25
-    x_main_gear: float = 2.75
-    x_nose_gear: float = 0.00
-    gear_track: float = 9.53
+    x_main_gear: float           = 2.875
+    x_nose_gear: float           = 0.5
+    gear_track: float            = 8.53
 
     # Payload / propulsion
     n_engines: int = 1
@@ -1227,7 +1229,9 @@ def run_mission(ac=None) -> Dict[str, float]:
 
 
 if __name__ == "__main__":
-    fuel_guess = 120.0
+
+
+    fuel_guess = 90
 
     for _ in range(20):
         ac = PiperCherokeeLike()
