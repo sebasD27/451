@@ -5,7 +5,7 @@ from contextlib import redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import matplotlib
 matplotlib.use('Agg')
@@ -17,6 +17,8 @@ from scipy.optimize import least_squares
 # Constants
 # -----------------------------------------------------------------------------
 G = 9.80665
+ULTIMATE_LOAD_FACTOR_MARGIN = 1.5
+TURN_LOAD_FACTOR_MARGIN = 0.95
 RHO0 = 1.225
 HP_TO_W = 745.7
 MPS_TO_KT = 1.94384
@@ -71,20 +73,34 @@ class PiperCherokeeLike:
     vtail_taper: float = 0.70
     vtail_t_c: float = 0.10
 
-    fuselage_length: float = 7.3
+    fuselage_length: float = 6.5
     fuselage_width: float = 1.2
     fuselage_height: float = 1.4
     tail_arm: float = 4.4
+    wing_x: float = 2.2  # m from nose, approximate wing aerodynamic center location
 
     # Landing gear lengths (height)
-    main_gear_length: float = 0.95
-    nose_gear_length: float = 0.55
+    main_gear_length: float = 0.5
+    nose_gear_length: float = 0.5
+
 
     # Meters
     tail_clearance_height: float = 1.25
-    x_main_gear: float           = 2.875
-    x_nose_gear: float           = 0.5
-    gear_track: float            = 8.53
+    x_main_gear: float           = 3
+    x_nose_gear: float           = 0.2
+    gear_track: float            = 2.8
+
+    @property
+    def cg_height(self) -> float:
+        return 0.33 * self.fuselage_height + self.main_gear_length
+
+    @property
+    def mean_chord(self) -> float:
+        return self.S / self.b
+
+    wing_box_depth: float = 0.18
+    wing_spar_thickness: float = 0.035
+    wing_spar_caps: int = 2
 
     # Payload / propulsion
     n_engines: int = 1
@@ -143,6 +159,18 @@ class PiperCherokeeLike:
     @property
     def k(self) -> float:
         return 1.0 / (math.pi * self.e * self.AR)
+
+    @property
+    def n_limit(self) -> float:
+        return self.n_ult / ULTIMATE_LOAD_FACTOR_MARGIN
+
+    @property
+    def max_turn_n(self) -> float:
+        return TURN_LOAD_FACTOR_MARGIN * self.n_limit
+
+    @property
+    def max_turn_bank_deg(self) -> float:
+        return math.degrees(math.acos(1.0 / self.max_turn_n))
 
     @property
     def power_max_w(self) -> float:
@@ -420,6 +448,7 @@ items = {
     "front_pax": {"weight": 80, "x": 2.2},
     "rear_pax1": {"weight": 80, "x": 3.2},
     "rear_pax2": {"weight": 80, "x": 3.2},
+    "baggage": {"weight": 50, "x": 3.5},
     "fuel": {"weight": 131, "x": 2.5},
 }
 
@@ -431,7 +460,27 @@ def compute_cg(items):
     x_cg = total_moment / total_weight
     return total_weight, x_cg
 
-W, xcg = compute_cg(items)
+def compute_cg_with_wing(ac: PiperCherokeeLike):
+    mtow_kg, empty_kg, breakdown = size_aircraft_weights(ac)
+    wing_weight = breakdown.get("wing", 0.0)
+    fuselage_empty_weight = max(empty_kg - wing_weight, 0.0)
+
+    cg_items = {
+        "empty_fuselage": {"weight": fuselage_empty_weight, "x": 2.4},
+        "wing": {"weight": wing_weight, "x": ac.wing_x},
+        "pilot": {"weight": 80, "x": 1.45},
+        "front_pax": {"weight": 80, "x": 1.45},
+        "rear_pax1": {"weight": 80, "x": 2},
+        "rear_pax2": {"weight": 80, "x": 2},
+        "baggage": {"weight": 50, "x": 3.5},
+        "fuel": {"weight": ac.m_fuel_max, "x": 2.5},
+    }
+
+    total_weight, x_cg = compute_cg(cg_items)
+    return total_weight, x_cg, cg_items
+
+ac_for_cg = PiperCherokeeLike()
+W, xcg, cg_items = compute_cg_with_wing(ac_for_cg)
 print(f"W: {W}, xcg: {xcg}")
 
 # -----------------------------------------------------------------------------
@@ -732,11 +781,14 @@ def report_performance(ac, mass_kg, outpath):
     ci = np.where(RC < 0.5)[0]
     service_ceiling = alts[ci[0]] if len(ci)>0 else alts[-1]
     rho_cr,_,_ = atmosphere(ac.cruise_alt_m); W=mass_kg*G; V_cr=ac.cruise_speed_kt*KT_TO_MPS
-    bank_a=np.linspace(15,75,50)
-    TR=[V_cr**2/(G*math.sqrt((1/math.cos(math.radians(p)))**2-1)) for p in bank_a]
+    bank_a=np.linspace(15,ac.max_turn_bank_deg,50)
+    turn_n=1.0 / np.cos(np.radians(bank_a))
+    TR=[V_cr**2/(G*math.sqrt(n**2-1)) for n in turn_n]
     print(f"\n  Max climb rate SL:  {RC[0]*196.85:.0f} ft/min")
     print(f"  Service ceiling:    {service_ceiling*M_TO_FT:.0f} ft")
     print(f"  Turn radius 30 deg: {TR[np.argmin(abs(bank_a-30))]:.0f} m")
+    print(f"  Max turn n:         {ac.max_turn_n:.2f} g at {ac.max_turn_bank_deg:.1f} deg bank")
+    print(f"  Structural n limit: {ac.n_limit:.2f} g  (turn margin {ac.n_limit - ac.max_turn_n:.2f} g)")
     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
     axs[0].plot(RC*196.85, alts*M_TO_FT, 'b-', lw=2)
     axs[0].axvline(100, color='r', ls='--', label='100 fpm service ceiling')
@@ -749,7 +801,7 @@ def report_performance(ac, mass_kg, outpath):
 def report_vn_diagram(ac, mass_kg, h_m, outpath):
     rho,_,_ = atmosphere(h_m); W=mass_kg*G
     Vs = math.sqrt(2*W/(rho*ac.S*ac.CLmax_clean))
-    n_pos=4.4; n_neg=-1.76
+    n_pos=ac.n_limit; n_neg=-0.40 * n_pos
     Va=Vs*math.sqrt(n_pos); Vd=175*KT_TO_MPS*1.25
     V_range=np.linspace(Vs*0.5, Vd*1.05, 300); V_kt=V_range*MPS_TO_KT
     def ns_p(V): return min(0.5*rho*V**2*ac.S*ac.CLmax_clean/W, n_pos)
@@ -760,13 +812,13 @@ def report_vn_diagram(ac, mass_kg, h_m, outpath):
     Kg=0.88*mu_g/(5.3+mu_g)
     n_gc=np.array([1+Kg*rho*15.24*V*ac.CLa*ac.S/(2*W) for V in V_g])
     print(f"\n  Vs={Vs*MPS_TO_KT:.1f} kts, Va={Va*MPS_TO_KT:.1f} kts, Vd={Vd*MPS_TO_KT:.1f} kts")
-    print(f"  n_pos_limit={n_pos}, n_neg_limit={n_neg}")
+    print(f"  n_pos_limit={n_pos:.2f}, n_neg_limit={n_neg:.2f}, n_ultimate={ac.n_ult:.2f}")
     fig,ax=plt.subplots(figsize=(10,6))
     ax.plot(V_kt, nsp, 'b-', lw=2, label='Pos stall')
     ax.plot(V_kt, nsn, 'b--', lw=2, label='Neg stall')
     ax.axhline(n_pos, color='r', lw=1.5, label=f'+{n_pos}g limit')
     ax.axhline(n_neg, color='r', lw=1.5, ls='--', label=f'{n_neg}g limit')
-    ax.axhline(1.5*n_pos, color='darkred', lw=1, ls=':', label=f'+{1.5*n_pos:.1f}g ultimate')
+    ax.axhline(ac.n_ult, color='darkred', lw=1, ls=':', label=f'+{ac.n_ult:.1f}g ultimate')
     ax.axvline(Va*MPS_TO_KT, color='g', lw=1.5, ls='--', label=f'Va={Va*MPS_TO_KT:.0f} kts')
     ax.axvline(Vd*MPS_TO_KT, color='purple', lw=1.5, ls='--', label=f'Vd={Vd*MPS_TO_KT:.0f} kts')
     ax.plot(V_g*MPS_TO_KT, n_gc, 'orange', lw=1.5, ls='-.', label='Gust 50fps')
@@ -774,6 +826,71 @@ def report_vn_diagram(ac, mass_kg, h_m, outpath):
     ax.set(xlabel='Speed (kts)', ylabel='Load Factor (g)', title=f'V-n Diagram h={h_m:.0f}m')
     ax.legend(fontsize=8); ax.set_ylim(n_neg*1.8, n_pos*1.8); ax.grid(alpha=0.3)
     plt.tight_layout(); plt.savefig(outpath, dpi=160); plt.close()
+
+
+def compute_wing_bending(ac: PiperCherokeeLike, mass_kg: float, n_load: Optional[float] = None):
+    if n_load is None:
+        n_load = ac.n_limit
+
+    W = mass_kg * G
+    total_lift = n_load * W
+    semi_span = ac.b / 2.0
+    # Per-wing root bending for an elliptical lift distribution. total_lift is
+    # the full aircraft lift, so each wing carries half of it.
+    M_root = 2.0 / (3.0 * math.pi) * total_lift * semi_span
+    shear_root = total_lift / 2.0
+
+    chord = ac.mean_chord
+    cap_area = ac.wing_spar_caps * ac.wing_spar_thickness * chord
+    section_modulus = cap_area * (ac.wing_box_depth / 2.0)
+    stress_mpa = (M_root / section_modulus) / 1e6 if section_modulus > 0 else float('inf')
+
+    y = np.linspace(0.0, semi_span, 120)
+    q0 = 2.0 * total_lift / (math.pi * semi_span)
+    q = q0 * np.sqrt(np.clip(1.0 - (y / semi_span) ** 2, 0.0, 1.0))
+    M = np.zeros_like(y)
+    for i in range(len(y)):
+        s = y[i:]
+        q_s = q[i:]
+        M[i] = np.trapezoid(q_s * (s - y[i]), s)
+
+    return {
+        "n_load": n_load,
+        "M_root_Nm": M_root,
+        "V_root_N": shear_root,
+        "section_modulus_m3": section_modulus,
+        "stress_mpa": stress_mpa,
+        "y_m": y,
+        "M_distribution_Nm": M,
+        "total_lift_N": total_lift,
+        "n_limit": ac.n_limit,
+        "n_ult": ac.n_ult,
+        "max_turn_n": ac.max_turn_n,
+        "turn_margin_n": ac.n_limit - ac.max_turn_n,
+    }
+
+
+def report_wing_bending(ac, mass_kg, outpath):
+    bending = compute_wing_bending(ac, mass_kg)
+    print("\nWing Bending Summary")
+    print("---------------------")
+    print(f"  Limit load factor:     {bending['n_load']:.2f} g")
+    print(f"  Ultimate load factor:  {bending['n_ult']:.2f} g")
+    print(f"  Max turn n:            {bending['max_turn_n']:.2f} g")
+    print(f"  Turn margin:           {bending['turn_margin_n']:.2f} g "
+          f"({'PASS' if bending['turn_margin_n'] >= 0 else 'FAIL'})")
+    print(f"  Root bending moment:   {bending['M_root_Nm']:.0f} Nm")
+    print(f"  Root shear:            {bending['V_root_N']:.0f} N")
+    print(f"  Section modulus:       {bending['section_modulus_m3']:.4e} m^3")
+    print(f"  Estimated stress:      {bending['stress_mpa']:.1f} MPa")
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot(bending['y_m'] * M_TO_FT, bending['M_distribution_Nm'] / 1000.0, 'b-', lw=2)
+    ax.set(xlabel='Spanwise station (ft)', ylabel='Bending moment (kNm)',
+           title='Wing Bending Moment Distribution')
+    ax.grid(alpha=0.3)
+    plt.tight_layout(); plt.savefig(outpath, dpi=160); plt.close()
+
 
 def report_trim(ac, mass_kg, h_m, x_cg, x_ac, outpath):
     rho,_,_ = atmosphere(h_m); W=mass_kg*G
@@ -828,7 +945,7 @@ def report_landing_gear(ac, x_cg_fwd, x_cg_aft,
 
     # 1. Forward gear margin — angle from main gear to aft CG >= 15 deg
     forward_gear_angle = math.degrees(math.atan(
-        (x_main - x_cg_aft) / ac.main_gear_length
+        (x_main - x_cg_aft) / ac.cg_height
     ))
 
     # 2. Touchdown clearance — tail clearance at rotation >= 15 deg
@@ -838,14 +955,17 @@ def report_landing_gear(ac, x_cg_fwd, x_cg_aft,
         tail_clearance_height / dist_main_to_tail
     ))
 
-    # 3. Overturn criteria — 55-65 deg (uses aft CG per slide)
+    # 3. Overturn criteria — use CG height and lateral track for rollover
+    
     overturn_angle = math.degrees(math.atan(
-        (track / 2) / wheelbase
+        (track / 2) / ac.cg_height
     ))
 
     # 4. Nose gear load fraction
-    F_nose = (x_main - x_cg_aft) / wheelbase   # most aft CG = max nose load
-    F_nose_fwd = (x_main - x_cg_fwd) / wheelbase  # most fwd CG = min nose load
+    F_nose = (x_main - x_cg_aft) / wheelbase      # aft CG = minimum nose load
+    F_nose_fwd = (x_main - x_cg_fwd) / wheelbase  # forward CG = maximum nose load
+    nose_aft_pass = 0.08 <= F_nose <= 0.15
+    nose_fwd_pass = 0.08 <= F_nose_fwd <= 0.15
 
     print("\nLanding Gear Metrics")
     print("-" * 45)
@@ -855,8 +975,10 @@ def report_landing_gear(ac, x_cg_fwd, x_cg_aft,
           f"({'PASS' if touchdown_angle >= 15 else 'FAIL'}, need >= 15)")
     print(f"  Overturn angle:        {overturn_angle:.1f} deg  "
           f"({'PASS' if 55 <= overturn_angle <= 65 else 'FAIL'}, need 55-65)")
-    print(f"  Nose load (aft CG):    {F_nose*100:.1f}%  (want 8-15%)")
-    print(f"  Nose load (fwd CG):    {F_nose_fwd*100:.1f}%  (want 8-15%)")
+    print(f"  Nose load (aft CG):    {F_nose*100:.1f}%  "
+          f"({'PASS' if nose_aft_pass else 'FAIL'}, want 8-15%)")
+    print(f"  Nose load (fwd CG):    {F_nose_fwd*100:.1f}%  "
+          f"({'PASS' if nose_fwd_pass else 'FAIL'}, want 8-15%)")
 
 def report_trade_studies(ac, outpath):
     base_S=ac.S; base_b=ac.b; base_CD0=ac.CD0; base_AR=ac.AR
@@ -1183,12 +1305,18 @@ def run_mission(ac=None) -> Dict[str, float]:
     report_vn_diagram(ac, takeoff_mass_kg, ac.cruise_alt_m,
                       outdir / "vn_diagram.png")
 
+    print("\n" + "="*50)
+    print("  WING BENDING")
+    print("="*50)
+    report_wing_bending(ac, takeoff_mass_kg, outdir / "wing_bending.png")
+
     # CG and trim — use the items dict and reasonable CG/AC locations
     x_cg = 2.45   # m from nose — update from your CG calculation
     x_ac  = 2.60  # m from nose — approx 0.25 MAC position + wing LE
     print("\n" + "="*50)
     print("  TRIM ANALYSIS")
     print("="*50)
+    _, x_cg, _ = compute_cg_with_wing(ac)
     report_trim(ac, takeoff_mass_kg, ac.cruise_alt_m,
                 x_cg, x_ac, outdir / "trim_analysis.png")
 
@@ -1201,9 +1329,14 @@ def run_mission(ac=None) -> Dict[str, float]:
     print("\n" + "="*50)
     print("  LANDING GEAR METRICS")
     print("="*50)
+    # Compute CG bounds based on the wing-aware calculation
+    _, x_cg_computed, cg_items = compute_cg_with_wing(ac)
+    # Use ±0.05 m as CG envelope bounds around computed CG
+    x_cg_fwd = x_cg_computed - 0.05
+    x_cg_aft = x_cg_computed + 0.05
     report_landing_gear(ac,
-                    x_cg_fwd = 2.37,   # most forward CG from your envelope
-                    x_cg_aft = 2.48,   # most aft CG from your envelope
+                    x_cg_fwd = x_cg_fwd,
+                    x_cg_aft = x_cg_aft,
                     x_main   = ac.x_main_gear,
                     x_nose   = ac.x_nose_gear,
                     track    = ac.gear_track,
